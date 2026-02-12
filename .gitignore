@@ -1,0 +1,21 @@
+# --- Python Specific ---
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.pytest_cache/
+
+# --- Environment Secrets ---
+.env
+config/secrets.yaml
+
+# --- Project Specific ---
+logs/*.log
+!logs/.gitkeep
+
+# --- IDE & System ---
+.vscode/
+.idea/
+.DS_Store
