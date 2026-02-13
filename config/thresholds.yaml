@@ -1,0 +1,20 @@
+# PhoenixAuto-Ops: Monitoring Thresholds Configuration
+# This YAML file defines the thresholds for various monitoring metrics in the PhoenixAuto-Ops system.
+# All values are in percentages (%) or absolute numbers as specified.
+
+thresholds:
+  cpu_usage_percent: 80.0       # Alert/Heal if CPU > this value
+  memory_usage_percent: 85.0    # Alert/Heal if RAM > this value
+  disk_usage_percent: 90.0      # Alert/Heal if Disk (/) > this value
+  load_average_limit: 4.0       # 1-minute load average 
+
+# Network related thresholds
+network:
+  max_connections: 500          # Active TCP connections
+  latency_ms: 200               # Round-trip latency in ms
+
+# Self-Healing behavior
+auto_healing:
+  enabled: true
+  max_retry_attempts: 3         # How many times to retry an action before giving up
+  cooldown_seconds: 300         # Wait time between healing attempts (5 min)
