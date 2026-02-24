@@ -16,5 +16,6 @@ network:
 # Self-Healing behavior
 auto_healing:
   enabled: true
+  dry_run: false                # If true, actions will be logged but not executed
   max_retry_attempts: 3         # How many times to retry an action before giving up
   cooldown_seconds: 300         # Wait time between healing attempts (5 min)
