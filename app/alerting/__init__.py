@@ -5,8 +5,10 @@ Exposes key classes for easy import.
 
 from .base import BaseAlertSender
 from .telegram import TelegramAlertSender
+from .slack import SlackAlertSender
 
 __all__ = [
     "BaseAlertSender",
     "TelegramAlertSender",
+    "SlackAlertSender",
 ]
