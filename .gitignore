@@ -19,3 +19,9 @@ logs/*.log
 .vscode/
 .idea/
 .DS_Store
+
+# Runtime / output files
+*.txt
+*.log
+*.out
+output*
