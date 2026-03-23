@@ -53,7 +53,7 @@ class MonitoringEngine:
 
             logger.info("Monitoring cycle completed successfully")
         except Exception as e:
-            logger.error("Error in monitoring cycle: %s", str(e))
+            logger.error("Error in monitoring cycle", extra={"error": str(e)})
 
     def _send_alert(self, metric_key: str, data: dict) -> None:
         """Send alert via available channels."""
