@@ -82,6 +82,11 @@ class HealingActions(BaseHealer):
         cmd_list = list(cmd)
         return self._execute_command(cmd_list, f"System command {' '.join(cmd_list)}")
 
+    def heal(self, **kwargs) -> bool:
+        """Dummy implementation for abstract method."""
+        logger.debug("Healing action triggered (dummy)")
+        return True
+
     def _execute_command(self, cmd: List[str], action_desc: str) -> bool:
         """Common command execution with timeout and logging."""
         if self.dry_run:
