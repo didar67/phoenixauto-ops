@@ -27,7 +27,9 @@ main
  ├── feat/cron-scheduler         ──► merged → run_monitor.sh + setup_cron.sh
  ├── feat/core-engine            ──► merged → engine.py + main.py (full cycle)
  ├── feat/project-installer      ──► merged → Automated one-command setup script setup.sh
- └── feat/env-files              ──► merged → Secure configuration template .env.example
+ ├── feat/env-files              ──► merged → Secure configuration template .env.example
+ ├── feat/documentation-core     ──► merged → README.md, architecture.md, structure.md
+ └── feat/documentation-guides   ──► merged → setup.md, configuration.md, development-workflow.md
 ```
 
 **Branch naming convention:** `feat/<component-or-feature-name>` — lowercase, hyphen-separated, scoped to what the branch actually builds.
@@ -69,6 +71,8 @@ Building one component per branch rather than committing everything to `main` di
 | `feat/core-engine` | `app/engine.py` (`MonitoringEngine` — full monitor → evaluate → alert → heal cycle); `app/main.py` (entry point); manual end-to-end testing via one-shot runs and log inspection |
 | `feat/project-installer` | Root-level `setup.sh` (venv, deps, permissions, cronjob)
 | `feat/env-files` | Added `.env.example` template for Telegram, Slack, and Email alerting |
+| `feat/documentation-core` | Added and refined `README.md`, `docs/architecture.md`, and `docs/structure.md` with project overview, architecture documentation, and repository structure reference |
+| `feat/documentation-guides` | Added and refined `docs/setup.md`, `docs/configuration.md`, and `docs/development-workflow.md` covering installation, configuration management, and the project's Git workflow |
 
 ---
 
