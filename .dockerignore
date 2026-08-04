@@ -1,0 +1,61 @@
+# Exclude unnecessary files from Docker build context
+
+# Version control
+.git
+.gitignore
+.gitkeep
+
+# Documentation
+README.md
+LICENSE
+docs/
+*.md
+
+# Python build/cache
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+dist
+build
+.Python
+venv/
+ENV/
+.venv
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# Testing
+tests/
+.pytest_cache
+.coverage
+htmlcov/
+*.cover
+
+# Temporary files
+*.log
+tmp/
+temp/
+*.tmp
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+
+# Project-specific
+setup.sh
+initialize_project.sh
+
+# OS files
+Thumbs.db
+.AppleDouble
+.LSOverride
