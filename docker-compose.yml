@@ -1,0 +1,102 @@
+services:
+  phoenixops:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: phoenixops-monitor
+    
+    # Load environment variables from .env file
+    env_file:
+      - .env
+    
+    # Set environment variables for Python
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: '1'
+      LOG_LEVEL: INFO
+    
+    # Mount persistent volumes
+    volumes:
+      # Config directory (read-write for dynamic config updates)
+      - ./config:/app/config:rw
+      # Logs directory (write for persistent logging)
+      - ./logs:/app/logs:rw
+      # .env file mount
+      - ./.env:/app/.env:ro
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Logging configuration
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import app.engine; print('healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    
+    # Run as non-root user (defined in Dockerfile)
+    user: phoenixops:phoenixops
+
+  # Optional: Separate cron-only container for scheduled tasks
+  phoenixops-cron:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: phoenixops-cron
+    
+    env_file:
+      - .env
+    
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: '1'
+    
+    volumes:
+      - ./config:/app/config:rw
+      - ./logs:/app/logs:rw
+      - ./.env:/app/.env:ro
+    
+    # Override entrypoint to run cron-based scheduling via a wrapper
+    entrypoint: /app/cron/setup_cron.sh
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    
+    restart: unless-stopped
+    
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    
+    user: phoenixops:phoenixops
+    
+    profiles:
+      - cron  # Only runs if --profile cron is set: docker compose --profile cron up
+
+
