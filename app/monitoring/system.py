@@ -12,7 +12,7 @@ error handling, logging, and threshold access.
 """
 
 import psutil
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from app.monitoring.base import BaseMetricCollector
 from app.utils.logger import logger
@@ -59,11 +59,22 @@ class SystemMetrics(BaseMetricCollector):
         """Get 1-minute system load average."""
         return psutil.getloadavg()[0]
 
-    def is_healthy(self) -> bool:
-        """Check if all metrics are below warning thresholds."""
-        metrics = self.collect()
+    def is_healthy(self, metrics: Optional[Dict[str, Any]] = None) -> bool:
+        """Check if all metrics are below warning thresholds.
+        Args:
+            metrics: Already-collected metrics dict from this same cycle.
+                Pass this whenever the caller already has fresh data so we
+                don't pay for a second psutil pass (and, since network
+                collection sleeps for I/O deltas, don't double that cost
+                either). Falls back to collecting fresh data if omitted,
+                so this stays a drop-in call on its own.
+        """
+        if metrics is None:
+            metrics = self.collect()
+
         cpu_ok = metrics["cpu_usage_percent"] < self.get_threshold("cpu_usage_percent")
         mem_ok = metrics["memory_usage_percent"] < self.get_threshold("memory_usage_percent")
+
         disk_ok = metrics["disk_usage_percent"] < self.get_threshold("disk_usage_percent")
         load_ok = metrics["load_average"] < self.get_threshold("load_average_limit")
 

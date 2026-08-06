@@ -11,7 +11,7 @@ threshold handling, logging, and error safety.
 """
 
 import time
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import psutil
 
@@ -73,9 +73,17 @@ class NetworkMetrics(BaseMetricCollector):
             self.logger.warning(f"Failed to get connections: {e}")
             return 0
 
-    def is_healthy(self) -> bool:
-        """Check if network metrics are within thresholds."""
-        metrics = self.collect()
+    def is_healthy(self, metrics: Optional[Dict[str, Any]] = None) -> bool:
+        """Check if network metrics are within thresholds.
+        
+        Args:
+            metrics: Already-collected metrics dict from this same cycle.
+                Pass this to skip a second collect() - each collect() here
+                costs roughly 2s just from the two I/O-delta sleeps, so a
+                redundant call is real wall-clock cost, not just noise.
+        """
+        if metrics is None:
+            metrics = self.collect()
         connections_ok = metrics["network_connections"] < self.get_threshold("network.max_connections", 500)
         # Latency threshold can be added later
         return connections_ok

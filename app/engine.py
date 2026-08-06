@@ -47,10 +47,10 @@ class MonitoringEngine:
             network_data = self.network_metrics.collect()
 
             # 2. Check thresholds and alert
-            if not self.system_metrics.is_healthy():
+            if not self.system_metrics.is_healthy(system_data):
                 self._send_alert("system_health", system_data)
 
-            if not self.network_metrics.is_healthy():
+            if not self.network_metrics.is_healthy(network_data):
                 self._send_alert("network_health", network_data)
 
             # 3. Trigger healing if needed
