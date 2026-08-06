@@ -69,8 +69,8 @@ USER phoenixops
 RUN python -c "import psutil, yaml, requests, dotenv; print('Dependencies verified')"
 
 # Default entrypoint: run main monitoring engine
-ENTRYPOINT ["python", "-u"]
-CMD ["app/main.py"]
+ENTRYPOINT ["python"]
+CMD ["-u", "-m", "app.main"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
