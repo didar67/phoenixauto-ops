@@ -29,6 +29,12 @@ class MonitoringEngine:
         self.healing = HealingActions()
         self.cycle_interval = config.get("engine.cycle_interval_seconds", 60)
 
+        # Set by shutdown() when main.py catches SIGTERM/SIGINT. run_forever()
+        # checks this between cycles (and during the inter-cycle sleep) so a
+        # `docker stop` / `docker compose down` finishes the in-flight cycle
+        # instead of getting killed mid-healing-action.
+        self._shutdown_requested = False
+
         logger.info("Monitoring engine initialized")
 
     def run_cycle(self) -> None:
@@ -80,8 +86,29 @@ class MonitoringEngine:
         if network_data.get("network_connections", 0) > 400:
             self.healing.kill_process("high-connection-process")
 
+    def shutdown(self) -> None:
+        """Request a graceful stop after the current cycle finishes.
+
+        Called from main.py's SIGTERM handler. Does not interrupt a cycle
+        already in progress - it just stops the next one from starting.
+        """
+        logger.info("Shutdown requested - will stop after current cycle")
+        self._shutdown_requested = True
+
+    def _interruptible_sleep(self, seconds: int) -> None:
+        """Sleep in 1s increments so shutdown() takes effect within ~1s
+        instead of waiting out the full cycle_interval - matters when
+        cycle_interval is large (e.g. 60s) and SIGTERM arrives mid-sleep.
+        """
+        slept = 0
+        while slept < seconds and not self._shutdown_requested:
+            time.sleep(min(1, seconds - slept))
+            slept += 1
+
     def run_forever(self) -> None:
-        """Run continuous monitoring loop."""
-        while True:
+        """Run continuous monitoring loop until a shutdown is requested."""
+        while not self._shutdown_requested:
             self.run_cycle()
-            time.sleep(self.cycle_interval)
+            self._interruptible_sleep(self.cycle_interval)
+
+        logger.info("Monitoring engine stopped")

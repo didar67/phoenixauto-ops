@@ -36,6 +36,12 @@ services:
     
     # Restart policy
     restart: unless-stopped
+
+    # Default is 10s. HealingActions subprocess calls have a 30s timeout
+    # (see app/healing/actions.py _execute_command), so a cycle caught
+    # mid-healing-action needs more room than the default before Docker
+    # escalates from SIGTERM to SIGKILL.
+    stop_grace_period: 40s
     
     # Logging configuration
     logging:
