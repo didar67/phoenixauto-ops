@@ -1,4 +1,7 @@
 # Exclude unnecessary files from Docker build context
+# Secrets - never let these into the build context
+.env
+config/secrets.yaml
 
 # Version control
 .git
