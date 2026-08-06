@@ -55,48 +55,20 @@ services:
     # Run as non-root user (defined in Dockerfile)
     user: phoenixops:phoenixops
 
-  # Optional: Separate cron-only container for scheduled tasks
-  phoenixops-cron:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: phoenixops-cron
-    
-    env_file:
-      - .env
-    
-    environment:
-      PYTHONPATH: /app
-      PYTHONUNBUFFERED: '1'
-    
-    volumes:
-      - ./config:/app/config:rw
-      - ./logs:/app/logs:rw
-      - ./.env:/app/.env:ro
-    
-    # Override entrypoint to run cron-based scheduling via a wrapper
-    entrypoint: /app/cron/setup_cron.sh
-    
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-        reservations:
-          cpus: '0.25'
-          memory: 128M
-    
-    restart: unless-stopped
-    
-    logging:
-      driver: json-file
-      options:
-        max-size: "5m"
-        max-file: "2"
-    
-    user: phoenixops:phoenixops
-    
-    profiles:
-      - cron  # Only runs if --profile cron is set: docker compose --profile cron up
-
-
+# The previous phoenixops-cron service has been removed. Reasoning:
+#
+# 1. cron/setup_cron.sh only registers a crontab entry and exits - it never
+#    starts `cron -f` in the foreground, so the container would exit
+#    immediately after running it and just restart-loop forever.
+#
+# 2. Even fixed, the crontab entry runs scripts/run_monitor.sh, which
+#    launches app/main.py -> engine.run_forever() - an infinite loop.
+#    Cron would spawn a new never-exiting process every 5 minutes, stacking
+#    duplicate monitoring loops instead of running one on a schedule.
+#
+# Cron scheduling and a continuously-running engine solve the same problem
+# (periodic monitoring) two different ways. The container only needs one:
+# the `phoenixops` service above already loops on its own via
+# cycle_interval_seconds. cron/setup_cron.sh remains useful for the
+# bare-metal/VM deployment path where a long-running daemon isn't assumed,
+# but it has no role inside this container.

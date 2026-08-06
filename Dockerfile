@@ -24,11 +24,9 @@ WORKDIR /app
 
 # Install runtime dependencies: cron, curl, shell utilities, sudo
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    cron \
     curl \
     bash \
     procps \
-    sudo \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for running the application
@@ -58,14 +56,21 @@ RUN chmod +x /app/scripts/*.sh /app/cron/*.sh && \
     chown -R phoenixops:phoenixops /app/logs && \
     chmod 755 /app/logs
 
-# Allow phoenixops to run scripts without password (for sudo in scripts if needed)
-RUN echo "phoenixops ALL=(ALL) NOPASSWD: /usr/sbin/systemctl, /usr/bin/find, /bin/bash" >> /etc/sudoers.d/phoenixops && \
-    chmod 0440 /etc/sudoers.d/phoenixops
+# NOTE ON HEALING SCRIPTS (documented honestly rather than hidden):
+# service_manager.sh calls `sudo systemctl ...`. Inside this container there
+# is no systemd process (PID 1 is the Python engine, not init) and no sudo
+# binary, so restart_service() will fail structurally regardless of
+# permissions. We deliberately do NOT grant sudo/systemctl access here - a
+# NOPASSWD sudoers entry would defeat the entire point of running as a
+# non-root user without making systemctl actually work. Recommended fix:
+# set auto_healing.dry_run: true in config/thresholds.yaml for containerized
+# deployments, or gate service-restart healing behind a HOST_MODE env check
+# once host-level monitoring (mounted /proc, --pid=host) is wired up.
 
-# Switch to non-root user
+
 USER phoenixops
 
-# Verify Python packages are accessible
+
 RUN python -c "import psutil, yaml, requests, dotenv; print('Dependencies verified')"
 
 # Default entrypoint: run main monitoring engine
