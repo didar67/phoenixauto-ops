@@ -93,6 +93,9 @@ RUN python -c "import psutil, yaml, requests, dotenv; print('Dependencies verifi
 ENTRYPOINT ["python"]
 CMD ["-u", "-m", "app.main"]
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import app.engine; print('healthy')" || exit 1
+# Import-only healthchecks lie: a hung run_forever() loop still imports fine.
+# StructuredLogger touches logs/phoenixauto-ops.log every cycle
+# (cycle_interval_seconds, default 60s), so a stale log file is a much more
+# honest liveness signal than "did the import succeed."
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD find /app/logs/phoenixauto-ops.log -mmin -2 | grep -q . || exit 1
