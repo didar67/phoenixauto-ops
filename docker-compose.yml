@@ -25,6 +25,11 @@ services:
       PYTHONPATH: /app
       PYTHONUNBUFFERED: '1'
       LOG_LEVEL: INFO
+       # Tells app/monitoring/system.py to point psutil at the host's proc
+      # mount and check disk usage against the host's root fs instead of
+      # the container's own overlay filesystem. See the volumes below.
+      HOST_PROC_PATH: /host/proc
+      HOST_ROOT_PATH: /rootfs
     
     # Mount persistent volumes
     volumes:
@@ -34,6 +39,18 @@ services:
       - ./logs:/app/logs:rw
       # .env file mount
       - ./.env:/app/.env:ro
+
+      # --- Host monitoring mounts ---
+      # This is the same approach Prometheus node_exporter uses: bind-mount
+      # the host's /proc and / read-only, then point psutil at them via
+      # HOST_PROC_PATH/HOST_ROOT_PATH above. /proc/stat, /proc/meminfo, and
+      # /proc/net/dev are generated relative to whichever namespace *mounted*
+      # this procfs instance - since it's the host's own /proc bind-mounted
+      # in, reading it from inside the container still returns the host's
+      # real numbers. No --pid=host or network_mode: host required for this,
+      # which keeps the container's own PID/network isolation intact.
+      - /proc:/host/proc:ro
+      - /:/rootfs:ro
     
     # Resource limits
     deploy:

@@ -12,11 +12,29 @@ error handling, logging, and threshold access.
 """
 
 import psutil
+import os
 from typing import Dict, Any, Optional
 
 from app.monitoring.base import BaseMetricCollector
 from app.utils.logger import logger
 
+# In containerized host-monitoring mode, docker-compose bind-mounts the
+# host's /proc into /host/proc and sets HOST_PROC_PATH. Pointing psutil at
+# it here - once, at import time - is what actually makes cpu/memory/network
+# numbers reflect the host instead of the container's own namespace; without
+# this, psutil silently falls back to the container's default /proc and every
+# metric below would describe the container, not the machine it runs on.
+# Left unset for bare-metal/dev runs, where the default /proc is already
+# the right one.
+
+# Host filesystem check path definition
+_HOST_ROOT_PATH = os.environ.get("HOST_ROOT_PATH")
+_DISK_CHECK_PATH = _HOST_ROOT_PATH if _HOST_ROOT_PATH else "/"
+
+_HOST_PROC_PATH = os.environ.get("HOST_PROC_PATH")
+if _HOST_PROC_PATH and hasattr(psutil, "PROCFS_PATH"):
+    setattr(psutil, "PROCFS_PATH", _HOST_PROC_PATH)
+    logger.info(f"Host monitoring mode enabled (PROCFS_PATH={_HOST_PROC_PATH})")
 
 class SystemMetrics(BaseMetricCollector):
     """Concrete collector for core system metrics.
@@ -52,8 +70,13 @@ class SystemMetrics(BaseMetricCollector):
         return psutil.virtual_memory().percent
 
     def _get_disk_usage(self) -> float:
-        """Get root filesystem disk usage percentage."""
-        return psutil.disk_usage("/").percent
+        """Get root filesystem disk usage percentage.
+
+        Checks HOST_ROOT_PATH (the host's bind-mounted /) in containerized
+        host-monitoring mode, otherwise the local root - see module-level
+        _DISK_CHECK_PATH.
+        """
+        return psutil.disk_usage(_DISK_CHECK_PATH).percent
 
     def _get_load_average(self) -> float:
         """Get 1-minute system load average."""
