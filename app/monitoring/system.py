@@ -27,8 +27,8 @@ from app.utils.logger import logger
 # Left unset for bare-metal/dev runs, where the default /proc is already
 # the right one.
 _HOST_PROC_PATH = os.environ.get("HOST_PROC_PATH")
-if _HOST_PROC_PATH:
-    psutil.PROCFS_PATH = _HOST_PROC_PATH
+if _HOST_PROC_PATH and hasattr(psutil, "PROCFS_PATH"):
+    setattr(psutil, "PROCFS_PATH", _HOST_PROC_PATH)
     logger.info(f"Host monitoring mode enabled (PROCFS_PATH={_HOST_PROC_PATH})")
 
 class SystemMetrics(BaseMetricCollector):
