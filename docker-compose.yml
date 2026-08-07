@@ -78,13 +78,12 @@ services:
         max-size: "10m"
         max-file: "3"
     
-    # Health check
-    healthcheck:
-      test: ["CMD", "python", "-c", "import app.engine; print('healthy')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 5s
+    # No healthcheck block here on purpose - the Dockerfile's HEALTHCHECK
+    # is the image's default and Compose inherits it automatically. A
+    # service-level override is only worth adding if this environment
+    # genuinely needs different timing than the image default; duplicating
+    # the exact same values here would just be dead config that silently
+    # shadows the Dockerfile's if the two ever drift out of sync.
     
     # Run as non-root user (defined in Dockerfile)
     user: phoenixops:phoenixops
