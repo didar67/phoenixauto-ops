@@ -65,8 +65,13 @@ class SystemMetrics(BaseMetricCollector):
         return psutil.virtual_memory().percent
 
     def _get_disk_usage(self) -> float:
-        """Get root filesystem disk usage percentage."""
-        return psutil.disk_usage("/").percent
+        """Get root filesystem disk usage percentage.
+        
+        Checks HOST_ROOT_PATH (the host's bind-mounted /) in containerized
+        host-monitoring mode, otherwise the local root - see module-level
+        _DISK_CHECK_PATH.
+        """
+        return psutil.disk_usage(_DISK_CHECK_PATH).percent
 
     def _get_load_average(self) -> float:
         """Get 1-minute system load average."""
