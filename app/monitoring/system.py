@@ -26,6 +26,11 @@ from app.utils.logger import logger
 # metric below would describe the container, not the machine it runs on.
 # Left unset for bare-metal/dev runs, where the default /proc is already
 # the right one.
+
+# Host filesystem check path definition
+_HOST_ROOT_PATH = os.environ.get("HOST_ROOT_PATH")
+_DISK_CHECK_PATH = _HOST_ROOT_PATH if _HOST_ROOT_PATH else "/"
+
 _HOST_PROC_PATH = os.environ.get("HOST_PROC_PATH")
 if _HOST_PROC_PATH and hasattr(psutil, "PROCFS_PATH"):
     setattr(psutil, "PROCFS_PATH", _HOST_PROC_PATH)
@@ -66,7 +71,7 @@ class SystemMetrics(BaseMetricCollector):
 
     def _get_disk_usage(self) -> float:
         """Get root filesystem disk usage percentage.
-        
+
         Checks HOST_ROOT_PATH (the host's bind-mounted /) in containerized
         host-monitoring mode, otherwise the local root - see module-level
         _DISK_CHECK_PATH.
