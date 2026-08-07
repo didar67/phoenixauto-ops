@@ -2,13 +2,15 @@
 # PhoenixAuto-Ops Core Automation Engine
 # Author: Didarul Islam
 # Multi-stage build for PhoenixAuto-Ops
-# Stage 1: Builder - install dependencies
 # ---------------------------------------------------
+
+# ---- Stage 1: Builder ----
 FROM python:3.11-slim as builder
 
 WORKDIR /build
 
-# Install system dependencies for build
+# psutil compiles a C extension at install time - gcc is only needed here,
+# never in the runtime image
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
@@ -17,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
-# Stage 2: Runtime
+# ---- Stage 2: Runtime ----
 FROM python:3.11-slim
 
 # Populated at build time (see docker-compose.yml build.args or the
@@ -38,7 +40,8 @@ LABEL org.opencontainers.image.title="PhoenixAuto-Ops" \
 
 WORKDIR /app
 
-# Install runtime dependencies: cron, curl, shell utilities, sudo
+# curl/procps kept for the healthcheck and for future healing actions that
+# inspect processes. cron and sudo intentionally dropped - see notes below.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     bash \
@@ -62,11 +65,10 @@ ENV PYTHONPATH=/app:$PYTHONPATH \
 # Copy project files
 COPY --chown=phoenixops:phoenixops app/ /app/app/
 COPY --chown=phoenixops:phoenixops config/ /app/config/
-COPY --chown=phoenixops:phoenixops cron/ /app/cron/
 COPY --chown=phoenixops:phoenixops scripts/ /app/scripts/
 
 # Make all shell scripts executable
-RUN chmod +x /app/scripts/*.sh /app/cron/*.sh && \
+RUN chmod +x /app/scripts/*.sh  \
     # Create log directory with proper permissions
     mkdir -p /app/logs && \
     chown -R phoenixops:phoenixops /app/logs && \
@@ -89,7 +91,8 @@ USER phoenixops
 
 RUN python -c "import psutil, yaml, requests, dotenv; print('Dependencies verified')"
 
-# Default entrypoint: run main monitoring engine
+# Split ENTRYPOINT/CMD so the module can be overridden at `docker run` time
+# without editing the image (e.g. for a one-off script or a shell for debugging)
 ENTRYPOINT ["python"]
 CMD ["-u", "-m", "app.main"]
 
