@@ -5,7 +5,7 @@
 # ---------------------------------------------------
 
 # ---- Stage 1: Builder ----
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 WORKDIR /build
 
@@ -68,7 +68,7 @@ COPY --chown=phoenixops:phoenixops config/ /app/config/
 COPY --chown=phoenixops:phoenixops scripts/ /app/scripts/
 
 # Make all shell scripts executable
-RUN chmod +x /app/scripts/*.sh  \
+RUN chmod +x /app/scripts/*.sh && \
     # Create log directory with proper permissions
     mkdir -p /app/logs && \
     chown -R phoenixops:phoenixops /app/logs && \
