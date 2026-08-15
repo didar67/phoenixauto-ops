@@ -58,6 +58,10 @@ phoenixauto-ops/
 │   ├── setup.md                    # Full installation guide
 │   ├── configuration.md            # thresholds.yaml and .env complete reference
 │   └── development-workflow.md     # Git branching strategy, code standards, and roadmap
+│   └── docker.md                   # Dockerfile, docker-compose.yml, host monitoring, known limitations
+├── Dockerfile                      # Multi-stage build: builder (gcc/psutil compile) → runtime (non-root)
+├── docker-compose.yml              # phoenixops service: env, volumes, host-monitoring mounts, healthcheck
+├── .dockerignore                   # Excludes .env, secrets, venv/, tests/ from build context
 │
 ├── venv/                           # Python virtual environment — generated locally, git-ignored
 ├── .env                            # Runtime secrets — git-ignored, NEVER commit
@@ -190,6 +194,18 @@ Reads the current user's crontab, checks whether a PhoenixAuto-Ops entry already
 ### `config/thresholds.yaml`
 
 The single source of truth for all operational parameters. Controls metric thresholds, healing enable/disable, dry-run mode, retry counts, and cooldown windows. Safe to commit — contains no secrets. See **[docs/configuration.md](docs/configuration.md)** for the full reference.
+
+### `Dockerfile`
+
+Multi-stage build. Stage 1 (`builder`) installs `psutil`'s C-extension build dependencies (`gcc`) and pip-installs into `--user` site-packages — these tools never reach the runtime image. Stage 2 copies only the installed packages, runs as a dedicated non-root user (`phoenixops`, uid 1000), supports host-level system monitoring via mounted `/proc`, defines the container's `HEALTHCHECK`, `org.opencontainers.image.*` metadata labels and starts the engine via `ENTRYPOINT ["python"]` / `CMD ["-u", "-m", "app.main"]`. See **[docs/docker.md](docs/docker.md)** for the full build breakdown.
+
+### `docker-compose.yml`
+
+Defines the `phoenixops` service: env vars (including `HOST_PROC_PATH`/`HOST_ROOT_PATH` for host-system monitoring), volume mounts for config/logs/`.env`, resource limits, and lifecycle settings (`restart`, `stop_grace_period`). Inherits the Dockerfile's `HEALTHCHECK` rather than redefining it. See **[docs/docker.md](docs/docker.md)**.
+
+### `.dockerignore`
+
+Excludes `.env`, `config/secrets.yaml`, `venv/`, `tests/`, and `docs/` from the build context — mirrors the intent of `.gitignore` keeps secrets out even if a future `COPY . .` is added by mistake.
 
 ### `.env` / `.env.example`
 
