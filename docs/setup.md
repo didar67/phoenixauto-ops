@@ -215,6 +215,24 @@ bash scripts/run_monitor.sh
 
 ---
 
+## Docker Setup (Alternative)
+
+Steps 1–7 above set up PhoenixAuto-Ops directly on the host using a Python virtual environment. If a containerized deployment is preferred instead, Docker and Docker Compose replace Steps 2, 5, and 6 (venv, sudoers, and cron are not needed inside the container):
+
+```bash
+git clone https://github.com/didar67/phoenixauto-ops.git
+cd phoenixauto-ops
+
+cp .env.example .env
+nano .env   # same secrets as Step 3 above
+
+docker compose up --build
+```
+
+The container runs as a non-root user with no `sudo` access, and the monitoring loop runs continuously (`MonitoringEngine.run_forever()`) rather than being re-invoked by cron every 5 minutes. Full Dockerfile/compose reference, host-system monitoring design, and a known platform limitation on Docker Desktop (WSL2) → **[docs/docker.md](docker.md)**
+
+---
+
 ## Common Setup Errors
 
 ### `systemctl` path not found
