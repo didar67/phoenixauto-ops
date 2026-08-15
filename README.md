@@ -27,6 +27,7 @@ Designed as a portfolio-grade DevOps project demonstrating: modular Python archi
 - ⚙️ **Config-driven** — all thresholds and healing flags live in `config/thresholds.yaml`
 - 🔒 **Secrets management** — credentials in `.env`, never committed to version control
 - ⏰ **Autonomous scheduling** — cron-based execution via idempotent `cron/setup_cron.sh`
+- 🐳 **Containerized** — multi-stage Docker build, non-root runtime, host-level system monitoring via read-only `/proc` and host filesystem mounts
 
 ---
 
@@ -92,6 +93,15 @@ python3 -m app.main
 
 Full setup instructions including sudoers, cron, and threshold tuning → **[docs/setup.md](docs/setup.md)**
 
+### Run with Docker (alternative to venv/cron)
+Prefer a container?
+
+\`\`\`bash
+docker compose up --build
+\`\`\`
+
+Full container details, host monitoring setup, and known limitations → **[docs/docker.md](docs/docker.md)**
+
 ---
 
 ## ⚙️ Configuration
@@ -147,7 +157,7 @@ bash scripts/run_monitor.sh
 | Phase | Status | Scope |
 |-------|--------|-------|
 | **Phase 1** — Core System | ✅ Complete | Python monitoring + alerting + healing + cron |
-| **Phase 2** — Docker | 🔜 Planned | Multi-stage build, non-root container, health checks |
+| **Phase 2** — Docker | ✅ Complete | Multi-stage build, non-root container, host-level monitoring, health checks, OCI metadata |
 | **Phase 3** — CI/CD + Security | 🔜 Planned | GitHub Actions, Trivy scanning, GHCR image push |
 | **Phase 4** — AWS | 🔜 Planned | ECS Fargate, Secrets Manager, Terraform IaC |
 
@@ -162,6 +172,7 @@ bash scripts/run_monitor.sh
 | [docs/setup.md](docs/setup.md) | Full installation, sudoers, cron, and troubleshooting |
 | [docs/configuration.md](docs/configuration.md) | Complete thresholds.yaml and .env reference |
 | [docs/development-workflow.md](docs/development-workflow.md) | Git branching model, commit guidelines, and roadmap steps |
+| [docs/docker.md](docs/docker.md) | Dockerfile, docker-compose.yml, .dockerignore, host monitoring design, and known limitations |
 
 ---
 
