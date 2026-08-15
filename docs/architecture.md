@@ -166,6 +166,37 @@ New functionality can be added without changing the core orchestration logic.
 
 ---
 
+## Containerized Runtime
+
+PhoenixAuto-Ops runs identically whether invoked by `cron` on bare metal or as a long-running process inside Docker — the `monitoring/ → alerting/ → healing/` cycle described above does not change. Containerization changes *how* the engine is invoked and *where* its metric sources point, not the engine itself.
+
+```text
+┌───────────────────────────────┐         ┌───────────────────────────────┐
+│      Bare-Metal Path          │         │        Containerized Path     │
+│                                │         │                                │
+│  cron (*/5 * * * *)           │         │  docker-compose up             │
+│    └── run_monitor.sh          │         │    └── ENTRYPOINT python       │
+│          └── python3 -m app.main         │          └── -m app.main       │
+│                └── one cycle, exit        │                └── run_forever()│
+│                                │         │                    (continuous) │
+└───────────────────────────────┘         └───────────────────────────────┘
+              │                                          │
+              └──────────────────┬───────────────────────┘
+                                  ▼
+                    Same MonitoringEngine cycle:
+                    collect → evaluate → alert → heal → log
+```
+
+Two things differ at the edges of this same cycle when running in a container:
+
+**Invocation model.** `cron/setup_cron.sh` re-invokes `app/main.py` every 5 minutes for a single cycle, then exits. The container instead runs `MonitoringEngine.run_forever()` continuously — `cron` has no role inside a container, since the engine already loops on its own via `cycle_interval_seconds`.
+
+**Metric source.** By default, `SystemMetrics` and `NetworkMetrics` (see [`app/monitoring/`](#appmonitoring--metrics-layer) above) read `/proc` for whichever namespace they're running in. On bare metal that's already the host. Inside a container, `psutil.PROCFS_PATH` is redirected to a bind-mounted copy of the host's `/proc` (`HOST_PROC_PATH`/`HOST_ROOT_PATH`), so the same `SystemMetrics.collect()` contract keeps returning host-level numbers rather than container-namespace numbers. `BaseMetricCollector`'s interface is untouched — only the underlying file path `psutil` reads from changes.
+
+Full Dockerfile stages, `docker-compose.yml` service definition, host-mount design, and a known platform limitation identified during testing → **[docs/docker.md](docker.md)*
+
+---
+
 ## Security Model
 
 | Concern | Mitigation |
