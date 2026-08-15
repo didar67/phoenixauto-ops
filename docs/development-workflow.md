@@ -29,7 +29,12 @@ main
  ├── feat/project-installer      ──► merged → Automated one-command setup script setup.sh
  ├── feat/env-files              ──► merged → Secure configuration template .env.example
  ├── feat/documentation-core     ──► merged → README.md, architecture.md, structure.md
- └── feat/documentation-guides   ──► merged → setup.md, configuration.md, development-workflow.md
+ ├──feat/documentation-guides   ──► merged → setup.md, configuration.md, development-workflow.md
+ ├── feature/dockerization       ──► merged → Multi-stage Dockerfile, Docker Compose, containerized runtime
+ ├── feat/docker-security        ──► merged → Non-root user, removed sudo/sudoers dependency
+ ├── feat/docker-runtime         ──► merged → Graceful SIGTERM shutdown, double-collect fix, OCI metadata
+ ├── feat/docker-host-monitoring ──► merged → Host /proc & rootfs mounts, PROCFS_PATH support
+ └── feat/docker-healthcheck     ──► merged → Log-based liveness HEALTHCHECK
 ```
 
 **Branch naming convention:** `feat/<component-or-feature-name>` — lowercase, hyphen-separated, scoped to what the branch actually builds.
@@ -73,6 +78,11 @@ Building one component per branch rather than committing everything to `main` di
 | `feat/env-files` | Added `.env.example` template for Telegram, Slack, and Email alerting |
 | `feat/documentation-core` | Added and refined `README.md`, `docs/architecture.md`, and `docs/structure.md` with project overview, architecture documentation, and repository structure reference |
 | `feat/documentation-guides` | Added and refined `docs/setup.md`, `docs/configuration.md`, and `docs/development-workflow.md` covering installation, configuration management, and the project's Git workflow |
+| `feature/dockerization` | Initial `Dockerfile` (multi-stage), `docker-compose.yml`, `.dockerignore`; Python application containerized with a builder + runtime stage |
+| `feat/docker-security` | Removed `sudo`/sudoers dependency and cron-in-container from the runtime image; confirmed non-root `phoenixops` user for all subprocess calls |
+| `feat/docker-runtime` | SIGTERM handler in `app/main.py` for graceful shutdown; fixed a double `collect()` call per cycle in `engine.py`; `python -m app.main` module entrypoint; OCI image labels (`org.opencontainers.image.*`) |
+| `feat/docker-host-monitoring` | Host `/proc` and root filesystem bind-mounted read-only into the container; `HOST_PROC_PATH`/`HOST_ROOT_PATH` env vars; `psutil.PROCFS_PATH` override in `app/monitoring/system.py` |
+| `feat/docker-healthcheck` | Replaced import-only `HEALTHCHECK` with a log-freshness check (`find ... -mmin -2`) validating the monitoring loop is actually alive, not just that the module imports |
 
 ---
 
@@ -241,7 +251,6 @@ Actual branch names may differ when implemented — these are placeholders to sh
 
 | Branch | Planned Work |
 |--------|--------------|
-| `feat/docker` | `Dockerfile` (multi-stage), `.dockerignore`, `docker-compose.yml` |
 | `feat/ci-cd-pipeline` | GitHub Actions workflow: lint, test, build, Trivy scan, push to GHCR |
 | `feat/aws-deployment` | ECS Fargate task definition, Terraform modules, Secrets Manager integration |
 
