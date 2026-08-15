@@ -108,6 +108,19 @@ At least one alert channel must be fully configured for PhoenixAuto-Ops to deliv
 
 ---
 
+## Container-Specific Environment Variables
+
+These are only relevant when running via `docker-compose.yml` — they have no effect in the venv-based setup and are not part of `.env`.
+
+| Variable | Required | Description |
+|----------|----------|--------------|
+| `HOST_PROC_PATH` | Docker only | Path to the host's bind-mounted `/proc` (e.g. `/host/proc`). When set, `psutil.PROCFS_PATH` is overridden so CPU/memory/network metrics reflect the host, not the container's own namespace. |
+| `HOST_ROOT_PATH` | Docker only | Path to the host's bind-mounted `/` (e.g. `/rootfs`). Used for disk usage checks instead of the container's overlay filesystem. |
+
+Full explanation of why these are needed and how the mounts work → **[docs/docker.md](docs/docker.md#host-level-monitoring)**
+
+---
+
 ## How `config_loader.py` Merges Both Layers
 
 `load_config()` in `app/utils/config_loader.py` constructs the unified config dict that every component receives at instantiation:
