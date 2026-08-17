@@ -9,11 +9,14 @@ configuration. It supports:
 """
 
 import os
+import shutil
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import yaml
 from dotenv import load_dotenv
+
+from app.utils.logger import logger
 
 
 class ConfigLoader:
@@ -53,28 +56,54 @@ class ConfigLoader:
 
     def _load_environment(self) -> None:
         """Load variables from .env file if it exists."""
-        if self.env_file.exists():
-            load_dotenv(self.env_file)
-            self._env_loaded = True
-            print(".env file loaded successfully")
-        else:
-            print(".env file not found - using system environment variables only")
+        try:
+            if self.env_file.exists():
+                load_dotenv(self.env_file)
+                self._env_loaded = True
+                logger.info(".env file loaded successfully")
+            else:
+                logger.warning(".env file not found - using system environment variables only")
+        except Exception as e:
+            logger.error(f"Failed to load .env file: {e}")
 
-    def _load_yaml_config(self) -> None:
+    def _load_yaml_config(self, is_retry: bool = False) -> None:
         """Load configuration from YAML file, fallback to example if missing."""
         if self.yaml_file.exists():
-            with open(self.yaml_file, "r", encoding="utf-8") as f:
-                self._config = yaml.safe_load(f) or {}
-            print(f"Loaded configuration from {self.yaml_file.name}")
+            try:
+                with open(self.yaml_file, "r", encoding="utf-8") as f:
+                    loaded_data = yaml.safe_load(f)
+                    if isinstance(loaded_data, dict):
+                        self._config = loaded_data
+                        logger.info(f"Loaded configuration from {self.yaml_file.name}")
+                    else:
+                        logger.error(
+                            f"YAML config {self.yaml_file.name} is not a valid dictionary. Starting with empty config."
+                        )
+                        self._config = {}
+            except yaml.YAMLError as e:
+                logger.error(f"YAML parsing error in {self.yaml_file.name}: {e}")
+                self._config = {}
+            except (PermissionError, OSError) as e:
+                logger.error(f"IO error reading {self.yaml_file.name}: {e}")
+                self._config = {}
+            except Exception as e:
+                logger.error(f"Unexpected error loading {self.yaml_file.name}: {e}")
+                self._config = {}
         else:
             example_file = self.config_dir / "thresholds.yaml.example"
-            if example_file.exists():
-                print(f"{self.yaml_file.name} not found - copying example template")
-                import shutil
-                shutil.copy(example_file, self.yaml_file)
-                self._load_yaml_config()  # recursive reload
+            if example_file.exists() and not is_retry:
+                logger.warning(
+                    f"{self.yaml_file.name} not found - copying example template from {example_file.name}"
+                )
+                try:
+                    self.config_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.copy(example_file, self.yaml_file)
+                    self._load_yaml_config(is_retry=True)  # Safe recursive reload
+                except (PermissionError, OSError) as e:
+                    logger.error(f"Failed to copy example config file: {e}")
+                    self._config = {}
             else:
-                print("No config files found - starting with empty configuration")
+                logger.warning("No config files found - starting with empty configuration")
                 self._config = {}
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -90,15 +119,23 @@ class ConfigLoader:
         Returns:
             The configuration value or default
         """
+        if not isinstance(key, str) or not key:
+            logger.error(f"Invalid key provided to get(): {key}")
+            return default
+
         keys = key.split(".")
         value = self._config
 
-        for k in keys:
-            if isinstance(value, dict) and k in value:
-                value = value[k]
-            else:
-                return default
-        return value
+        try:
+            for k in keys:
+                if isinstance(value, dict) and k in value:
+                    value = value[k]
+                else:
+                    return default
+            return value
+        except Exception as e:
+            logger.error(f"Unexpected error retrieving config key '{key}': {e}")
+            return default
 
     def get_threshold(self, metric_key: str, default: float = 80.0) -> float:
         """Get a threshold value by its direct key name.
@@ -114,13 +151,18 @@ class ConfigLoader:
         """
         # First try: thresholds.<metric_key>
         value = self.get(f"thresholds.{metric_key}")
-        if value is not None:
-            return float(value)
 
         # Fallback: direct top-level key
-        value = self.get(metric_key)
+        if value is None:
+            value = self.get(metric_key)
+
         if value is not None:
-            return float(value)
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                logger.error(
+                    f"Invalid non-numeric threshold value '{value}' for key '{metric_key}'. Falling back to default {default}"
+                )
 
         # Ultimate fallback
         return default
