@@ -24,8 +24,6 @@ from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any
 
-from app.utils.config_loader import config
-
 
 class JSONFormatter(logging.Formatter):
     """Custom JSON formatter for structured logging in files."""
@@ -84,9 +82,11 @@ class StructuredLogger:
         """Configure console and rotating file handlers with error handling."""
         self.logger = logging.getLogger("phoenixauto_ops")
 
+        import os
+
         # Load log level from config with fallback
         try:
-            log_level_str = config.get("logging.level", "INFO").upper()
+            log_level_str = os.getenv("logging.level", "INFO").upper()
             self.logger.setLevel(getattr(logging, log_level_str, logging.INFO))
         except Exception as e:
             self.logger.setLevel(logging.INFO)
