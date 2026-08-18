@@ -24,6 +24,7 @@ Designed as a portfolio-grade DevOps project demonstrating: modular Python archi
 - 🛠️ **Self-healing engine** — service restarts, cache flush, and old log cleanup via shell scripts with dry-run support
 - 🔁 **Dry-run & retry** — safely test healing logic before enabling it on production
 - 🗂️ **Structured logging** — JSON log output with rotation to `logs/phoenixauto_ops.log`
+- 🧪 **Automated test suite** — 48 pytest cases (unit + integration) covering monitoring, alerting, and healing layers, 80% code coverage
 - ⚙️ **Config-driven** — all thresholds and healing flags live in `config/thresholds.yaml`
 - 🔒 **Secrets management** — credentials in `.env`, never committed to version control
 - ⏰ **Autonomous scheduling** — cron-based execution via idempotent `cron/setup_cron.sh`
@@ -148,6 +149,12 @@ tail -f logs/phoenixauto_ops.log | python3 -m json.tool
 
 # Run via production wrapper (handles venv)
 bash scripts/run_monitor.sh
+
+# Run the full test suite with coverage
+pytest -v
+
+# Coverage report only (uses pytest.ini config)
+pytest --cov=app --cov-report=term-missing
 ```
 
 ---
@@ -158,7 +165,7 @@ bash scripts/run_monitor.sh
 |-------|--------|-------|
 | **Phase 1** — Core System | ✅ Complete | Python monitoring + alerting + healing + cron |
 | **Phase 2** — Docker | ✅ Complete | Multi-stage build, non-root container, host-level monitoring, health checks, OCI metadata |
-| **Phase 3** — CI/CD + Security | 🔜 Planned | GitHub Actions, Trivy scanning, GHCR image push |
+| **Phase 3** — Testing + CI/CD + Security | 🔄 In Progress | pytest suite (48 tests, 80% coverage) ✅ → GitHub Actions lint/test/security 🔜 → Trivy scanning, GHCR image push 🔜 |
 | **Phase 4** — AWS | 🔜 Planned | ECS Fargate, Secrets Manager, Terraform IaC |
 
 ---
