@@ -1,0 +1,234 @@
+name: Docker CI
+
+# Only worth running when something that actually changes the built image
+# or its runtime behavior changes - a docs-only or comment-only change has
+# no effect on the image and shouldn't spend ~2-3 minutes building and
+# scanning it on every push.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "docker-compose.yml"
+      - "app/**"
+      - "config/**"
+      - "scripts/**"
+      - "requirements.txt"
+      - ".github/workflows/docker-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "docker-compose.yml"
+      - "app/**"
+      - "config/**"
+      - "scripts/**"
+      - "requirements.txt"
+      - ".github/workflows/docker-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: phoenixauto-ops
+  # A local, ephemeral tag for this run only - nothing is pushed to a
+  # registry from this workflow (see docs/ci.md, "Registry Decision").
+  # Immutable per-run instead of `latest` so two concurrent runs on
+  # different branches never collide inside the same runner's cache.
+  IMAGE_TAG: ci-${{ github.sha }}
+
+jobs:
+  build-and-validate:
+    name: Docker Build & Runtime Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Dockerfile-level best practices (missing pinned base tag, ADD vs
+      # COPY, etc). failure-threshold is deliberately `error` rather than
+      # the default `info` - style/warning-level findings are still
+      # printed in the log for visibility but don't block the merge; only
+      # genuine correctness problems do.
+      - name: Lint Dockerfile (hadolint)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          failure-threshold: error
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve build metadata
+        id: meta
+        run: echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
+      # load: true (not push) puts the image straight into this runner's
+      # local Docker daemon so the validation steps below can `docker run`
+      # it immediately - see "Container Registry" in docs/ci.md for why
+      # nothing is published from this workflow yet.
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          build-args: |
+            VERSION=0.0.0-ci
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ steps.meta.outputs.build_date }}
+          cache-from: type=gha,scope=phoenixops-image
+          cache-to: type=gha,mode=max,scope=phoenixops-image
+
+      # Confirms the non-root design documented in docs/docker.md actually
+      # made it into the built image, not just the Dockerfile source.
+      - name: Verify image runs as non-root
+        run: |
+          RUNTIME_USER=$(docker image inspect --format='{{.Config.User}}' ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }})
+          echo "Image configured to run as: '${RUNTIME_USER}'"
+          if [ "$RUNTIME_USER" != "phoenixops" ]; then
+            echo "::error::Expected runtime user 'phoenixops', got '${RUNTIME_USER:-<empty/root>}'"
+            exit 1
+          fi
+
+      # Runs the actual image the same way docker-compose.yml does (module
+      # entrypoint, no host mounts - see docs/ci.md "Docker Compose
+      # Evaluation") and exercises real behavior from feat/docker-runtime
+      # and feat/docker-healthcheck, not synthetic commands invented just
+      # to make this step pass.
+      - name: Start container
+        run: |
+          docker run -d \
+            --name phoenixops-ci \
+            -e PYTHONUNBUFFERED=1 \
+            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+
+      - name: Wait for HEALTHCHECK to report healthy
+        run: |
+          for attempt in $(seq 1 20); do
+            status=$(docker inspect --format='{{.State.Health.Status}}' phoenixops-ci 2>/dev/null || echo "unknown")
+            echo "[attempt ${attempt}/20] health status: ${status}"
+            if [ "$status" = "healthy" ]; then
+              exit 0
+            fi
+            if [ "$status" = "unhealthy" ]; then
+              echo "::error::Container reported unhealthy"
+              docker logs phoenixops-ci
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "::error::Container did not become healthy within 100s"
+          docker logs phoenixops-ci
+          exit 1
+
+      - name: Verify startup log output
+        run: |
+          docker logs phoenixops-ci 2>&1 | tee /tmp/startup.log
+          grep -q "PhoenixAuto-Ops starting" /tmp/startup.log
+          grep -q "Monitoring engine initialized" /tmp/startup.log
+          grep -q "Entering continuous monitoring mode" /tmp/startup.log
+
+      # Validates the SIGTERM handling added in feat/docker-runtime:
+      # `docker stop` sends SIGTERM (not SIGINT), so this is the one check
+      # in this workflow that would have caught the original
+      # silent-SIGKILL bug documented in docs/docker.md.
+      - name: Verify graceful shutdown on SIGTERM
+        run: |
+          docker stop --time 40 phoenixops-ci
+          docker logs phoenixops-ci 2>&1 | tee /tmp/shutdown.log
+          grep -q "Received shutdown signal" /tmp/shutdown.log
+          grep -q "Monitoring engine stopped" /tmp/shutdown.log
+
+      - name: Collect container logs on failure
+        if: failure()
+        run: docker logs phoenixops-ci || true
+
+      - name: Remove container
+        if: always()
+        run: docker rm -f phoenixops-ci || true
+
+  image-security-scan:
+    name: Image Vulnerability Scan (Trivy)
+    runs-on: ubuntu-latest
+    # Gated behind runtime validation on purpose - no reason to spend time
+    # scanning an image whose basic startup/healthcheck/shutdown behavior
+    # already failed.
+    needs: build-and-validate
+    # Only this job touches the Security tab - build-and-validate never
+    # needs write access to anything.
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve build metadata
+        id: meta
+        run: echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
+      # Rebuilds against the same cache scope populated by
+      # build-and-validate, so this is a cache-hit rebuild (seconds, not
+      # minutes) instead of a full recompile - avoids shipping the image
+      # as a workflow artifact just to move it between jobs.
+      - name: Rebuild image (cache hit)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          build-args: |
+            VERSION=0.0.0-ci
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ steps.meta.outputs.build_date }}
+          cache-from: type=gha,scope=phoenixops-image
+
+      # Full report first, non-blocking. HIGH-severity findings in a
+      # python:3.11-slim base image without an upstream fix available yet
+      # are common and worth seeing, but shouldn't stop every merge on
+      # their own.
+      - name: Trivy scan - full report (non-blocking)
+        uses: aquasecurity/trivy-action@v0.24.0
+        with:
+          scan-type: image
+          image-ref: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "0"
+
+      - name: Upload Trivy SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+        continue-on-error: true
+
+      # CRITICAL-only gate - matches the severity policy already recorded
+      # in the project roadmap (docs/development-workflow.md). This is the
+      # step that actually fails the job.
+      - name: Trivy scan - CRITICAL gate (blocking)
+        uses: aquasecurity/trivy-action@v0.24.0
+        with:
+          scan-type: image
+          image-ref: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
