@@ -150,9 +150,11 @@ PhoenixAuto-Ops is designed around modularity, separation of concerns, and confi
 
 All collectors, alert senders, and healers follow abstract base class contracts so new components can be added without changing the engine.
 
-### Dependency Injection via Config
+### Configuration Access via Singleton
 
-No component instantiates its own configuration. The merged config dict is constructed once in `main.py` and injected into every object at construction time. This makes unit testing straightforward — pass a mock config dict, no filesystem access needed.
+Every component accesses configuration through a single shared `ConfigLoader` singleton (`app.utils.config_loader.config`), constructed once at import time from `thresholds.yaml` and `.env`. No component builds its own config, and no component takes a config dict as a constructor argument — they all import and read the same instance.
+
+This makes unit testing straightforward without needing real config files on disk: tests monkeypatch the singleton's `get()` and `get_threshold()` methods directly (see `tests/conftest.py`'s `patch_config` fixture) rather than passing in a mock object, since every component resolves config through that one shared reference regardless of how it was instantiated.
 
 ---
 

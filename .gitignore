@@ -13,6 +13,7 @@ config/secrets.yaml
 
 # --- Project Specific ---
 logs/*.log
+logs/*.log*
 !logs/.gitkeep
 
 # --- IDE & System ---
@@ -25,3 +26,8 @@ logs/*.log
 *.log
 *.out
 output*
+
+# --- Testing Artifacts ---
+.coverage
+coverage.xml
+htmlcov/

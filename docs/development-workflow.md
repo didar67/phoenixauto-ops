@@ -34,7 +34,9 @@ main
  ├── feat/docker-security        ──► merged → Non-root user, removed sudo/sudoers dependency
  ├── feat/docker-runtime         ──► merged → Graceful SIGTERM shutdown, double-collect fix, OCI metadata
  ├── feat/docker-host-monitoring ──► merged → Host /proc & rootfs mounts, PROCFS_PATH support
- └── feat/docker-healthcheck     ──► merged → Log-based liveness HEALTHCHECK
+ ├── feat/docker-healthcheck     ──► merged → Log-based liveness HEALTHCHECK
+ ├── feat/docker-documentation   ──► merged → docs/docker.md (Dockerfile/compose reference, host-monitoring design, WSL2 limitation)
+ └── feat/pytest-suite           ──► merged → 48-case pytest suite (unit + integration), 80% coverage
 ```
 
 **Branch naming convention:** `feat/<component-or-feature-name>` — lowercase, hyphen-separated, scoped to what the branch actually builds.
@@ -83,6 +85,8 @@ Building one component per branch rather than committing everything to `main` di
 | `feat/docker-runtime` | SIGTERM handler in `app/main.py` for graceful shutdown; fixed a double `collect()` call per cycle in `engine.py`; `python -m app.main` module entrypoint; OCI image labels (`org.opencontainers.image.*`) |
 | `feat/docker-host-monitoring` | Host `/proc` and root filesystem bind-mounted read-only into the container; `HOST_PROC_PATH`/`HOST_ROOT_PATH` env vars; `psutil.PROCFS_PATH` override in `app/monitoring/system.py` |
 | `feat/docker-healthcheck` | Replaced import-only `HEALTHCHECK` with a log-freshness check (`find ... -mmin -2`) validating the monitoring loop is actually alive, not just that the module imports |
+| `feat/docker-documentation` | `docs/docker.md` — full Dockerfile/`docker-compose.yml` reference, multi-stage build breakdown, non-root user rationale, host `/proc`+`/` bind-mount design for `HOST_PROC_PATH`/`HOST_ROOT_PATH`, graceful SIGTERM shutdown flow, and the documented Docker Desktop (WSL2) network-metrics limitation with root cause and workaround plan |
+| `feat/pytest-suite` | `tests/conftest.py` with `patch_config` fixture; unit tests for `ConfigLoader`, `SystemMetrics`, `NetworkMetrics`, all three alert senders, and `HealingActions`; integration tests for `MonitoringEngine.run_cycle()`; `pytest.ini` with coverage reporting |
 
 ---
 
@@ -251,7 +255,8 @@ Actual branch names may differ when implemented — these are placeholders to sh
 
 | Branch | Planned Work |
 |--------|--------------|
-| `feat/ci-cd-pipeline` | GitHub Actions workflow: lint, test, build, Trivy scan, push to GHCR |
+| `feat/ci-lint-test` | GitHub Actions: lint (flake8/black) + pytest execution against the existing `tests/` suite |
+| `feat/ci-docker-trivy` | Docker build validation + Trivy CRITICAL-severity scan gate |
 | `feat/aws-deployment` | ECS Fargate task definition, Terraform modules, Secrets Manager integration |
 
 ---
@@ -268,4 +273,5 @@ Actual branch names may differ when implemented — these are placeholders to sh
 | `config/` | YAML files only — no secrets, safe to commit |
 | `cron/` | Scheduling setup scripts only |
 | `logs/` | Runtime output — git-ignored, never commit actual log files |
+| `tests/` | pytest suite — `unit/` mirrors `app/` module structure (`monitoring/`, `alerting/`, `healing/`); `integration/` for full-cycle orchestration tests; `conftest.py` for shared fixtures |
 | `docs/` | Markdown documentation — one file per topic |
