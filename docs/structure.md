@@ -49,6 +49,16 @@ phoenixauto-ops/
 ├── config/
 │   └── thresholds.yaml             # All metric thresholds + auto_healing flags
 │
+├── tests/                           # pytest suite — unit + integration
+│   ├── conftest.py                  # Shared fixtures (patch_config for singleton ConfigLoader)
+│   ├── unit/
+│   │   ├── test_config_loader.py
+│   │   ├── monitoring/              # test_system_metrics.py, test_network_metrics.py
+│   │   ├── alerting/                # test_alert_base.py, test_telegram_alert.py, test_slack_alert.py, test_email_alert.py
+│   │   └── healing/                 # test_healing_actions.py
+│   └── integration/
+│       └── test_engine_cycle.py     # Full MonitoringEngine.run_cycle() orchestration
+│
 ├── logs/                           # Runtime log output — git-ignored, directory tracked
 │   └── .gitkeep
 │
@@ -68,6 +78,7 @@ phoenixauto-ops/
 ├── .env.example                    # Secret template — safe to commit, no real values
 ├── .gitignore
 ├── requirements.txt
+├── pytest.ini                       # Test discovery config + coverage reporting (--cov-report=xml)
 ├── setup.sh                        # One-command bootstrap script
 └── README.md                       # Project overview, quick start, and entry points
 ```
@@ -194,6 +205,18 @@ Reads the current user's crontab, checks whether a PhoenixAuto-Ops entry already
 ### `config/thresholds.yaml`
 
 The single source of truth for all operational parameters. Controls metric thresholds, healing enable/disable, dry-run mode, retry counts, and cooldown windows. Safe to commit — contains no secrets. See **[docs/configuration.md](docs/configuration.md)** for the full reference.
+
+### `tests/`
+
+pytest suite split into `unit/` and `integration/`. Unit tests mock every external dependency (`psutil`, `requests`, `smtplib`, `subprocess`) so they run in milliseconds with no network or filesystem access. `conftest.py` provides a `patch_config` fixture that monkeypatches the `ConfigLoader` singleton's `get()`/`get_threshold()` methods — every component reads config through this same singleton at import time, so this fixture is what keeps unit tests independent of whatever's actually in a local `.env` or `thresholds.yaml`.
+
+`integration/test_engine_cycle.py` verifies `MonitoringEngine.run_cycle()` wiring — collect → evaluate → alert → heal — with each collaborator mocked, since their individual behavior is already covered by their own unit test modules.
+
+Current state: 48 tests, 80% coverage (`pytest.ini` configured with `--cov-report=xml` for future Codecov integration).
+
+### `pytest.ini`
+
+Test discovery and coverage config. `--cov-report=xml` generates `coverage.xml` on every run — not committed to git (see `.gitignore`), but this is the artifact the CI pipeline's test stage will pick up and, later, feed to a coverage badge.
 
 ### `Dockerfile`
 
