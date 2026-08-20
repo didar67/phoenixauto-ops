@@ -91,9 +91,7 @@ class ConfigLoader:
         else:
             example_file = self.config_dir / "thresholds.yaml.example"
             if example_file.exists() and not is_retry:
-                logger.warning(
-                    f"{self.yaml_file.name} not found - copying example template from {example_file.name}"
-                )
+                logger.warning(f"{self.yaml_file.name} not found - copying example template from {example_file.name}")
                 try:
                     self.config_dir.mkdir(parents=True, exist_ok=True)
                     shutil.copy(example_file, self.yaml_file)

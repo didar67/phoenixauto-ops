@@ -34,12 +34,7 @@ class TelegramAlertSender(BaseAlertSender):
 
         url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
 
-        payload = {
-            "chat_id": self.chat_id,
-            "text": message,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True
-        }
+        payload = {"chat_id": self.chat_id, "text": message, "parse_mode": "HTML", "disable_web_page_preview": True}
 
         try:
             response = requests.post(url, json=payload, timeout=10)

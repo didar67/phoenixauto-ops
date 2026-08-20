@@ -35,10 +35,7 @@ class SlackAlertSender(BaseAlertSender):
 
         try:
             response = requests.post(
-                self.webhook_url,
-                json=payload,
-                timeout=10,
-                headers={"Content-Type": "application/json"}
+                self.webhook_url, json=payload, timeout=10, headers={"Content-Type": "application/json"}
             )
             response.raise_for_status()
             self.logger.debug("Slack message sent successfully")

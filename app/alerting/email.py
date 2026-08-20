@@ -40,11 +40,11 @@ class EmailAlertSender(BaseAlertSender):
 
         try:
             msg = MIMEMultipart()
-            msg['From'] = self.from_email
-            msg['To'] = self.to_email
-            msg['Subject'] = "PhoenixAuto-Ops Alert"
+            msg["From"] = self.from_email
+            msg["To"] = self.to_email
+            msg["Subject"] = "PhoenixAuto-Ops Alert"
 
-            msg.attach(MIMEText(message, 'plain'))
+            msg.attach(MIMEText(message, "plain"))
 
             with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, timeout=10) as server:
                 server.login(self.username, self.password)
