@@ -165,12 +165,19 @@ jobs:
         # regression in the code, so it doesn't fail the whole job.
         continue-on-error: true
 
-      # Any known CVE against a pinned dependency in requirements.txt is
-      # actionable (bump the pin or consciously accept the risk) - unlike
-      # bandit's confidence/severity levels there's no meaningful
-      # "informational-only" bucket to carve out here.
+      # pytest's PYSEC-2026-1845 (predictable /tmp/pytest-of-{user} directory
+      # name) is explicitly accepted rather than fixed right now: it's a
+      # test-only dependency (not exercised at runtime by the monitoring
+      # engine), the exploit requires local multi-user access to a shared
+      # /tmp - not applicable to GitHub Actions' ephemeral, single-tenant
+      # runners - and the fix (pytest 9.x) is a major version bump that
+      # needs its own compatibility pass against pytest-cov==4.0.0 and
+      # pytest-mock==3.10.0 before landing. Tracked under Deferred
+      # Improvements in docs/ci.md, not silently suppressed.
       - name: Dependency vulnerability scan (pip-audit)
-        run: pip-audit -r requirements.txt --desc
+        run: | 
+          pip-audit -r requirements.txt --desc \
+            --ignore-vuln PYSEC-2026-1845
 
   # Single required status check for branch protection instead of naming
   # three separate jobs there. lint/test/security run in parallel with no

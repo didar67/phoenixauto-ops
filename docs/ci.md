@@ -318,6 +318,18 @@ requiring careful trigger/permission separation to manage it.
   `docker-ci.yml`. These check different layers (Python packages vs. the
   full image including the base OS) rather than duplicating each other.
 
+### Accepted findings
+
+`pip-audit`'s CRITICAL-by-default policy has one explicit, documented
+exception: **PYSEC-2026-1845** (pytest, predictable `/tmp/pytest-of-{user}`
+directory naming) is ignored via `--ignore-vuln`. This is a test-only
+dependency, the exploit requires local multi-user access to a shared `/tmp`
+- not a condition GitHub Actions' ephemeral, single-tenant runners meet -
+and the fix requires a pytest major-version bump (8.x → 9.x) that needs its
+own compatibility verification against `pytest-cov==4.0.0` and
+`pytest-mock==3.10.0` before it's safe to land. This is revisited under
+Deferred Improvements, not silently ignored forever.
+
 ---
 
 ## Git Workflow Integration
@@ -360,3 +372,20 @@ CI observes and gates the existing process rather than replacing it.
   artifact this workflow already produces is what that integration would
   consume)
 - Commit-SHA pinning of third-party GitHub Actions
+
+---
+
+## Deferred Improvements
+
+Genuinely useful next steps, intentionally kept outside this CI stage's
+scope rather than added just to make the pipeline look more complete:
+
+- Bump `pytest` to 9.x (resolves PYSEC-2026-1845) after verifying
+  compatibility with `pytest-cov` and `pytest-mock`, and separating
+  test-only dependencies (`pytest`, `pytest-cov`, `pytest-mock`) into a
+  `requirements-dev.txt` so they stop shipping inside the production
+  Docker image
+- Container registry publishing (GHCR) once a deployment stage exists
+- Commit-SHA pinning of third-party GitHub Actions
+- Dependabot/Renovate for automated dependency and action version bumps
+- A dynamic CI status badge in `README.md`
