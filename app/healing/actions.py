@@ -6,9 +6,10 @@ Concrete healing actions that call secure shell scripts or system commands.
 All operations respect dry-run mode, retry logic, and logging from BaseHealer.
 """
 
-import subprocess
+# Required to execute internally constructed, allowlisted healing commands.
+import subprocess  # nosec B404
 from pathlib import Path
-from typing import List, Any
+from typing import List
 
 from app.healing.base import BaseHealer
 from app.utils.logger import logger
@@ -32,41 +33,23 @@ class HealingActions(BaseHealer):
     def restart_service(self, service_name: str) -> bool:
         """Restart a systemd service using shell script."""
         script = self.scripts_dir / "service_manager.sh"
-        return self._safe_execute(
-            f"restart {service_name}",
-            self._run_shell_script,
-            script,
-            "restart",
-            service_name
-        )
+        return self._safe_execute(f"restart {service_name}", self._run_shell_script, script, "restart", service_name)
 
     def kill_process(self, process_name: str) -> bool:
         """Kill processes by name using pkill (SIGTERM)."""
         return self._safe_execute(
-            f"kill {process_name}",
-            self._run_system_command,
-            "pkill",
-            "-f",  # match full command line
-            process_name
+            f"kill {process_name}", self._run_system_command, "pkill", "-f", process_name  # match full command line
         )
 
     def clear_cache(self) -> bool:
         """Clear system page cache using cleanup script."""
         script = self.scripts_dir / "cleanup.sh"
-        return self._safe_execute(
-            "clear_cache",
-            self._run_shell_script,
-            script
-        )
+        return self._safe_execute("clear_cache", self._run_shell_script, script)
 
     def log_rotate(self) -> bool:
         """Force log rotation using cleanup script."""
         script = self.scripts_dir / "cleanup.sh"
-        return self._safe_execute(
-            "log_rotate",
-            self._run_shell_script,
-            script
-        )
+        return self._safe_execute("log_rotate", self._run_shell_script, script)
 
     def _run_shell_script(self, script_path: Path, *args: str) -> bool:
         """Run shell script with proper error handling and timeout."""
@@ -82,7 +65,7 @@ class HealingActions(BaseHealer):
         cmd_list = list(cmd)
         return self._execute_command(cmd_list, f"System command {' '.join(cmd_list)}")
 
-    def heal(self, **kwargs: Any) -> bool:
+    def heal(self, **kwargs) -> bool:
         """Dummy implementation for abstract method."""
         logger.debug("Healing action triggered (dummy)")
         return True
@@ -95,13 +78,8 @@ class HealingActions(BaseHealer):
 
         try:
             self.logger.debug(f"Executing: {' '.join(cmd)}")
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=True
-            )
+            # `cmd` is constructed only from trusted, allowlisted healing actions.
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=True)  # nosec B603
             if result.stderr:
                 self.logger.debug(f"Command stderr: {result.stderr.strip()}")
             return True

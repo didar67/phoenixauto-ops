@@ -36,6 +36,7 @@ if _HOST_PROC_PATH and hasattr(psutil, "PROCFS_PATH"):
     setattr(psutil, "PROCFS_PATH", _HOST_PROC_PATH)
     logger.info(f"Host monitoring mode enabled (PROCFS_PATH={_HOST_PROC_PATH})")
 
+
 class SystemMetrics(BaseMetricCollector):
     """Concrete collector for core system metrics.
 
@@ -58,7 +59,7 @@ class SystemMetrics(BaseMetricCollector):
             "load_average": self._safe_execute(self._get_load_average),
         }
 
-        self.logger.info(f"System metrics collected", **metrics)
+        self.logger.info("System metrics collected", **metrics)
         return metrics
 
     def _get_cpu_usage(self) -> float:

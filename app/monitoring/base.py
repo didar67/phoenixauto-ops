@@ -8,7 +8,7 @@ across CPU, Memory, Disk, and future metrics.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Any, Dict
 
 from app.utils.config_loader import config
 from app.utils.logger import logger
@@ -45,10 +45,10 @@ class BaseMetricCollector(ABC):
         """
         pass
 
-    def _safe_execute(self, func, *args, **kwargs) -> Any:
+    def _safe_execute(self, func, *args, **kwargs):
         """Wrapper to safely execute metric collection functions."""
         try:
             return func(*args, **kwargs)
         except Exception as e:
-            self.logger.error(f"Metric collection failed in {func.__name__}, error=str(e)")
+            self.logger.error(f"Metric collection failed in {func.__name__}, error={str(e)}")
             return None

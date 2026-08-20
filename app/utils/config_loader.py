@@ -8,10 +8,9 @@ configuration. It supports:
 - Dot-notation access for nested keys
 """
 
-import os
 import shutil
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import yaml
 from dotenv import load_dotenv
@@ -92,9 +91,7 @@ class ConfigLoader:
         else:
             example_file = self.config_dir / "thresholds.yaml.example"
             if example_file.exists() and not is_retry:
-                logger.warning(
-                    f"{self.yaml_file.name} not found - copying example template from {example_file.name}"
-                )
+                logger.warning(f"{self.yaml_file.name} not found - copying example template from {example_file.name}")
                 try:
                     self.config_dir.mkdir(parents=True, exist_ok=True)
                     shutil.copy(example_file, self.yaml_file)
@@ -160,8 +157,9 @@ class ConfigLoader:
             try:
                 return float(value)
             except (ValueError, TypeError):
-                logger.error(
-                    f"Invalid non-numeric threshold value '{value}' for key '{metric_key}'. Falling back to default {default}"
+                logger.warning(
+                    f"Invalid non-numeric threshold value '{value}' for key "
+                    f"'{metric_key}'. Falling back to default {default}"
                 )
 
         # Ultimate fallback

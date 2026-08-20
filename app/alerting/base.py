@@ -8,7 +8,8 @@ across Telegram, Email, Slack, and future channels.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Dict
+
 from datetime import datetime, timedelta
 
 from app.utils.config_loader import config

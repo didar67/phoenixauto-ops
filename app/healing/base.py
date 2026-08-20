@@ -8,8 +8,8 @@ consistent and safe healing across the system.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any
 from time import sleep
+from typing import Any
 
 from app.utils.config_loader import config
 from app.utils.logger import logger
