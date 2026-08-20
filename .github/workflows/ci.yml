@@ -141,7 +141,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Install security tooling
-        run: pip install bandit==1.7.9 pip-audit==2.7.3
+        run: pip install bandit==1.7.9 bandit-sarif-formatter==1.1.1 pip-audit==2.7.3
 
       # Medium+ severity, medium+ confidence only. Bandit's low/low bucket
       # is dominated by things like the subprocess usage in
