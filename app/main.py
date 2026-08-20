@@ -23,9 +23,10 @@ def main() -> None:
         # SIGINT - KeyboardInterrupt alone never fires in that path, so the
         # container was previously getting SIGKILL'd with no shutdown log at
         # all once the compose stop_grace_period ran out.
-        def _handle_sigterm(signum, frame) -> None:
-           logger.info("Received shutdown signal. Stopping gracefully.")
-           engine.shutdown()
+
+        def _handle_sigterm(signum, frame):
+            logger.info("Received shutdown signal. Stopping gracefully.")
+            engine.shutdown()
 
         signal.signal(signal.SIGTERM, _handle_sigterm)
         logger.info("Entering continuous monitoring mode")
@@ -35,6 +36,7 @@ def main() -> None:
     except Exception as e:
         logger.critical("Fatal error in main loop", extra={"error": str(e)})
         raise
+
 
 if __name__ == "__main__":
     main()

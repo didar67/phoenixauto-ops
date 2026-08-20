@@ -6,9 +6,10 @@ Concrete healing actions that call secure shell scripts or system commands.
 All operations respect dry-run mode, retry logic, and logging from BaseHealer.
 """
 
-import subprocess
+# Required to execute internally constructed, allowlisted healing commands.
+import subprocess   # nosec B404
 from pathlib import Path
-from typing import List, Any
+from typing import List
 
 from app.healing.base import BaseHealer
 from app.utils.logger import logger
@@ -82,7 +83,7 @@ class HealingActions(BaseHealer):
         cmd_list = list(cmd)
         return self._execute_command(cmd_list, f"System command {' '.join(cmd_list)}")
 
-    def heal(self, **kwargs: Any) -> bool:
+    def heal(self, **kwargs) -> bool:
         """Dummy implementation for abstract method."""
         logger.debug("Healing action triggered (dummy)")
         return True
@@ -95,7 +96,8 @@ class HealingActions(BaseHealer):
 
         try:
             self.logger.debug(f"Executing: {' '.join(cmd)}")
-            result = subprocess.run(
+            # `cmd` is constructed only from trusted, allowlisted healing actions.
+            result = subprocess.run(    # nosec B603
                 cmd,
                 capture_output=True,
                 text=True,

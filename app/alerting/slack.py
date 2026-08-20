@@ -8,7 +8,6 @@ Sends formatted alerts to a Slack channel using Incoming Webhook.
 import requests
 
 from app.alerting.base import BaseAlertSender
-from app.utils.logger import logger
 
 
 class SlackAlertSender(BaseAlertSender):

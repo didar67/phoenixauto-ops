@@ -16,7 +16,6 @@ from typing import Dict, Any, Optional
 import psutil
 
 from app.monitoring.base import BaseMetricCollector
-from app.utils.logger import logger
 
 
 class NetworkMetrics(BaseMetricCollector):
@@ -75,7 +74,7 @@ class NetworkMetrics(BaseMetricCollector):
 
     def is_healthy(self, metrics: Optional[Dict[str, Any]] = None) -> bool:
         """Check if network metrics are within thresholds.
-        
+
         Args:
             metrics: Already-collected metrics dict from this same cycle.
                 Pass this to skip a second collect() - each collect() here

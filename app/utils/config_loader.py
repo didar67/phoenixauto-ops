@@ -8,10 +8,9 @@ configuration. It supports:
 - Dot-notation access for nested keys
 """
 
-import os
 import shutil
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import yaml
 from dotenv import load_dotenv
@@ -160,8 +159,9 @@ class ConfigLoader:
             try:
                 return float(value)
             except (ValueError, TypeError):
-                logger.error(
-                    f"Invalid non-numeric threshold value '{value}' for key '{metric_key}'. Falling back to default {default}"
+                logger.warning(
+                    f"Invalid non-numeric threshold value '{value}' for key "
+                    f"'{metric_key}'. Falling back to default {default}"
                 )
 
         # Ultimate fallback

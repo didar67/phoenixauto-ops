@@ -10,7 +10,6 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 from app.alerting.base import BaseAlertSender
-from app.utils.logger import logger
 
 
 class EmailAlertSender(BaseAlertSender):

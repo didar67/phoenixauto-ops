@@ -8,7 +8,6 @@ Sends formatted alerts to a specific chat/channel with proper error handling.
 import requests
 
 from app.alerting.base import BaseAlertSender
-from app.utils.logger import logger
 
 
 class TelegramAlertSender(BaseAlertSender):
