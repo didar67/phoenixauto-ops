@@ -2,6 +2,8 @@
 
 > **Automated Server Health Monitoring, Alerting & Self-Healing System** — a production-oriented Python/Bash system that watches your infrastructure, fires multi-channel alerts, and autonomously remediates failures without human intervention.
 
+[![Application CI](https://github.com/didar67/phoenixauto-ops/actions/workflows/ci.yml/badge.svg)](https://github.com/didar67/phoenixauto-ops/actions/workflows/ci.yml)
+[![Docker CI](https://github.com/didar67/phoenixauto-ops/actions/workflows/docker-ci.yml/badge.svg)](https://github.com/didar67/phoenixauto-ops/actions/workflows/docker-ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)](https://python.org)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%2F%20Ubuntu-orange?logo=linux)](https://ubuntu.com)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
@@ -24,7 +26,7 @@ Designed as a portfolio-grade DevOps project demonstrating: modular Python archi
 - 🛠️ **Self-healing engine** — service restarts, cache flush, and old log cleanup via shell scripts with dry-run support
 - 🔁 **Dry-run & retry** — safely test healing logic before enabling it on production
 - 🗂️ **Structured logging** — JSON log output with rotation to `logs/phoenixauto_ops.log`
-- 🧪 **Automated test suite** — 48 pytest cases (unit + integration) covering monitoring, alerting, and healing layers, 80% code coverage
+- 🔐 **Automated CI security gates** — GitHub Actions runs lint, tests, Bandit static analysis, pip-audit dependency scanning, and Trivy image scanning on every pull request
 - ⚙️ **Config-driven** — all thresholds and healing flags live in `config/thresholds.yaml`
 - 🔒 **Secrets management** — credentials in `.env`, never committed to version control
 - ⏰ **Autonomous scheduling** — cron-based execution via idempotent `cron/setup_cron.sh`
@@ -50,6 +52,8 @@ For detailed component breakdown, data flow, and design patterns → **[docs/arc
 
 ```
 phoenixauto-ops/
+├── .github/
+│   └── workflows/          # ci.yml (app CI), docker-ci.yml (Docker CI)
 ├── app/
 │   ├── monitoring/         # SystemMetrics, NetworkMetrics (psutil)
 │   ├── alerting/           # Telegram, Slack, Email senders
@@ -165,8 +169,8 @@ pytest --cov=app --cov-report=term-missing
 |-------|--------|-------|
 | **Phase 1** — Core System | ✅ Complete | Python monitoring + alerting + healing + cron |
 | **Phase 2** — Docker | ✅ Complete | Multi-stage build, non-root container, host-level monitoring, health checks, OCI metadata |
-| **Phase 3** — Testing + CI/CD + Security | 🔄 In Progress | pytest suite (48 tests, 80% coverage) ✅ → GitHub Actions lint/test/security 🔜 → Trivy scanning, GHCR image push 🔜 |
-| **Phase 4** — AWS | 🔜 Planned | ECS Fargate, Secrets Manager, Terraform IaC |
+| **Phase 3** — Testing + CI + Security | ✅ Complete | pytest suite (48 tests, 80% coverage), GitHub Actions lint/format/test, Bandit + pip-audit dependency scanning, Docker build/runtime validation, Trivy image scanning with CRITICAL severity gate |
+| **Phase 4** — CD + AWS | 🔜 Planned | GHCR image publishing, ECS Fargate, Secrets Manager, Terraform IaC |
 
 ---
 
@@ -180,6 +184,7 @@ pytest --cov=app --cov-report=term-missing
 | [docs/configuration.md](docs/configuration.md) | Complete thresholds.yaml and .env reference |
 | [docs/development-workflow.md](docs/development-workflow.md) | Git branching model, commit guidelines, and roadmap steps |
 | [docs/docker.md](docs/docker.md) | Dockerfile, docker-compose.yml, .dockerignore, host monitoring design, and known limitations |
+| [docs/ci.md](docs/ci.md) | GitHub Actions CI pipelines, security scanning policy, and Docker validation strategy |
 
 ---
 
