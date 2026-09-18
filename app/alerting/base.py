@@ -50,18 +50,25 @@ class BaseAlertSender(ABC):
             if not self._is_cooldown_over(metric):
                 return False
             message = self._format_message(metric, value, threshold, level)
-            self._send(message)
+            was_sent = self._send(message)
+            # _send() returns False (not an exception) when a channel is
+            # unconfigured, e.g. missing Telegram credentials. Treating that
+            # as a successful dispatch made every skipped channel log
+            # "Alert sent" right alongside the channels that actually fired.
+            if was_sent is False:
+                return False
             self.last_sent[metric] = datetime.now()
             self.logger.info(f"Alert sent for {metric}: {message}", level=level)
             return True
         except Exception as e:
-            self.logger.error(f"Failed to send alert for {metric}: {e}")
-            return False
+           self.logger.error(f"Failed to send alert for {metric}: {e}")
+           return False
 
     @abstractmethod
-    def _send(self, message: str) -> None:
+    def _send(self, message: str) -> bool:
         """Abstract method to implement channel-specific sending logic.
 
-        Must be implemented by subclasses (e.g., Telegram, Email).
+        Must return True on a real dispatch attempt, False when the
+        channel is unconfigured and the send was intentionally skipped.
         """
         pass
