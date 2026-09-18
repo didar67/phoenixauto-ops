@@ -8,6 +8,7 @@ configuration. It supports:
 - Dot-notation access for nested keys
 """
 
+import os
 import shutil
 from pathlib import Path
 from typing import Any, Dict
@@ -52,6 +53,31 @@ class ConfigLoader:
 
         self._load_environment()
         self._load_yaml_config()
+        self._load_secrets_from_env()
+
+    def _load_secrets_from_env(self) -> None:
+       """Inject alerting credentials from .env into the config tree.
+
+       thresholds.yaml intentionally never holds secrets (it's the file we
+       commit), so telegram/slack/email credentials only exist in
+       os.environ after _load_environment(). This stitches them into the
+       same dot-notation tree get() already serves everything else from,
+       instead of adding a second, separate lookup path.
+       """
+       self._config.setdefault("telegram", {})
+       self._config["telegram"]["bot_token"] = os.getenv("TELEGRAM_BOT_TOKEN")
+       self._config["telegram"]["chat_id"] = os.getenv("TELEGRAM_CHAT_ID")
+
+       self._config.setdefault("slack", {})
+       self._config["slack"]["webhook_url"] = os.getenv("SLACK_WEBHOOK_URL")
+
+       self._config.setdefault("email", {})
+       self._config["email"]["smtp_server"] = os.getenv("SMTP_HOST")
+       self._config["email"]["smtp_port"] = int(os.getenv("SMTP_PORT", "465"))
+       self._config["email"]["username"] = os.getenv("SMTP_USER")
+       self._config["email"]["password"] = os.getenv("SMTP_PASSWORD")
+       self._config["email"]["from_email"] = os.getenv("SMTP_USER")
+       self._config["email"]["to_email"] = os.getenv("ALERT_EMAIL_RECIPIENTS")
 
     def _load_environment(self) -> None:
         """Load variables from .env file if it exists."""
