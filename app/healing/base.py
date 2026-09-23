@@ -51,7 +51,9 @@ class BaseHealer(ABC):
                 self.logger.info(f"Healing action succeeded: {action_name}")
                 return result
             except Exception as e:
-                self.logger.warning(f"Attempt {attempt}/{self.max_retries} failed for {action_name}: {e}")
+                self.logger.warning(
+                    f"Attempt {attempt}/{self.max_retries} failed for {action_name}: {e}"
+                )
                 if attempt == self.max_retries:
                     self.logger.error(f"All retry attempts failed for {action_name}")
                     raise

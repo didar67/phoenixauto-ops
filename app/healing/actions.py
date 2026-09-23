@@ -33,12 +33,22 @@ class HealingActions(BaseHealer):
     def restart_service(self, service_name: str) -> bool:
         """Restart a systemd service using shell script."""
         script = self.scripts_dir / "service_manager.sh"
-        return self._safe_execute(f"restart {service_name}", self._run_shell_script, script, "restart", service_name)
+        return self._safe_execute(
+            f"restart {service_name}",
+            self._run_shell_script,
+            script,
+            "restart",
+            service_name,
+        )
 
     def kill_process(self, process_name: str) -> bool:
         """Kill processes by name using pkill (SIGTERM)."""
         return self._safe_execute(
-            f"kill {process_name}", self._run_system_command, "pkill", "-f", process_name  # match full command line
+            f"kill {process_name}",
+            self._run_system_command,
+            "pkill",
+            "-f",
+            process_name,  # match full command line
         )
 
     def clear_cache(self) -> bool:
@@ -79,7 +89,9 @@ class HealingActions(BaseHealer):
         try:
             self.logger.debug(f"Executing: {' '.join(cmd)}")
             # `cmd` is constructed only from trusted, allowlisted healing actions.
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=True)  # nosec B603
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=30, check=True
+            )  # nosec B603
             if result.stderr:
                 self.logger.debug(f"Command stderr: {result.stderr.strip()}")
             return True

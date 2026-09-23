@@ -50,5 +50,7 @@ class BaseMetricCollector(ABC):
         try:
             return func(*args, **kwargs)
         except Exception as e:
-            self.logger.error(f"Metric collection failed in {func.__name__}, error={str(e)}")
+            self.logger.error(
+                f"Metric collection failed in {func.__name__}, error={str(e)}"
+            )
             return None
