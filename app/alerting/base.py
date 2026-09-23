@@ -8,9 +8,8 @@ across Telegram, Email, Slack, and future channels.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict
-
 from datetime import datetime, timedelta
+from typing import Dict
 
 from app.utils.config_loader import config
 from app.utils.logger import logger
@@ -35,16 +34,22 @@ class BaseAlertSender(ABC):
     def _is_cooldown_over(self, metric_key: str) -> bool:
         """Check if cooldown period has passed for this metric."""
         last_time = self.last_sent.get(metric_key)
-        if last_time and (datetime.now() - last_time) < timedelta(minutes=self.cooldown_minutes):
+        if last_time and (datetime.now() - last_time) < timedelta(
+            minutes=self.cooldown_minutes
+        ):
             self.logger.debug(f"Cooldown active for {metric_key}")
             return False
         return True
 
-    def _format_message(self, metric: str, value: float, threshold: float, level: str) -> str:
+    def _format_message(
+        self, metric: str, value: float, threshold: float, level: str
+    ) -> str:
         """Format a standard alert message."""
         return f"{level.upper()} Alert: {metric} exceeded threshold ({value} > {threshold})"
 
-    def send_alert(self, metric: str, value: float, threshold: float, level: str = "warning") -> bool:
+    def send_alert(
+        self, metric: str, value: float, threshold: float, level: str = "warning"
+    ) -> bool:
         """Public method to send an alert with cooldown and error handling."""
         try:
             if not self._is_cooldown_over(metric):
@@ -61,8 +66,8 @@ class BaseAlertSender(ABC):
             self.logger.info(f"Alert sent for {metric}: {message}", level=level)
             return True
         except Exception as e:
-           self.logger.error(f"Failed to send alert for {metric}: {e}")
-           return False
+            self.logger.error(f"Failed to send alert for {metric}: {e}")
+            return False
 
     @abstractmethod
     def _send(self, message: str) -> bool:
