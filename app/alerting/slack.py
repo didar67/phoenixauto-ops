@@ -25,20 +25,24 @@ class SlackAlertSender(BaseAlertSender):
         if not self.webhook_url:
             self.logger.warning("Slack webhook URL missing in config. Alerts will be skipped.")
 
-    def _send(self, message: str) -> None:
+    def _send(self, message: str) -> bool:
         """Send message to Slack via Incoming Webhook."""
         if not self.webhook_url:
             self.logger.warning("Skipping Slack alert - missing webhook URL")
-            return
+            return False
 
         payload = {"text": message}
 
         try:
             response = requests.post(
-                self.webhook_url, json=payload, timeout=10, headers={"Content-Type": "application/json"}
+                self.webhook_url,
+                json=payload,
+                timeout=10,
+                headers={"Content-Type": "application/json"},
             )
             response.raise_for_status()
             self.logger.debug("Slack message sent successfully")
+            return True
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Slack webhook request failed: {e}")
             raise

@@ -46,8 +46,15 @@ class TestRunCycle:
         engine.telegram_alert.send_alert.assert_not_called()
         engine.slack_alert.send_alert.assert_not_called()
 
-    def test_system_breach_dispatches_alert_on_both_channels(self, engine):
-        engine.system_metrics.collect.return_value = {"system_health": 92.0}
+    def test_system_breach_dispatches_alert_on_both_channels(self, engine, monkeypatch):
+        # Pin the threshold lookup so this test doesn't depend on whatever
+        # cpu_usage_percent happens to be set to in thresholds.yaml.
+        monkeypatch.setattr(
+            "app.engine.config.get_threshold",
+            lambda metric_key, default=None: 80.0,
+        )
+
+        engine.system_metrics.collect.return_value = {"cpu_usage_percent": 92.0}
         engine.network_metrics.collect.return_value = {"network_connections": 10}
         engine.system_metrics.is_healthy.return_value = False
         engine.network_metrics.is_healthy.return_value = True
@@ -55,10 +62,10 @@ class TestRunCycle:
         engine.run_cycle()
 
         engine.telegram_alert.send_alert.assert_called_once_with(
-            "system_health", 92.0, 80.0, "critical"
+            "cpu_usage_percent", 92.0, 80.0, "critical"
         )
         engine.slack_alert.send_alert.assert_called_once_with(
-            "system_health", 92.0, 80.0, "critical"
+            "cpu_usage_percent", 92.0, 80.0, "critical"
         )
 
     def test_a_collector_exception_does_not_crash_the_cycle(self, engine):

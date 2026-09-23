@@ -26,20 +26,26 @@ class TelegramAlertSender(BaseAlertSender):
         if not self.bot_token or not self.chat_id:
             self.logger.warning("Telegram credentials missing in config. Alerts will be skipped.")
 
-    def _send(self, message: str) -> None:
+    def _send(self, message: str) -> bool:
         """Send message via Telegram Bot API."""
         if not self.bot_token or not self.chat_id:
             self.logger.warning("Skipping Telegram alert - missing credentials")
-            return
+            return False
 
         url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
 
-        payload = {"chat_id": self.chat_id, "text": message, "parse_mode": "HTML", "disable_web_page_preview": True}
+        payload = {
+            "chat_id": self.chat_id,
+            "text": message,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        }
 
         try:
             response = requests.post(url, json=payload, timeout=10)
             response.raise_for_status()
             self.logger.debug("Telegram message sent successfully")
+            return True
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Telegram API request failed: {e}")
             raise

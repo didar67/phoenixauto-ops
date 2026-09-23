@@ -8,13 +8,28 @@ Coordinates monitoring, alerting, and self-healing cycles.
 
 import time
 
-from app.monitoring.system import SystemMetrics
-from app.monitoring.network import NetworkMetrics
-from app.alerting.telegram import TelegramAlertSender
+from app.alerting.email import EmailAlertSender
 from app.alerting.slack import SlackAlertSender
+from app.alerting.telegram import TelegramAlertSender
 from app.healing.actions import HealingActions
-from app.utils.logger import logger
+from app.monitoring.network import NetworkMetrics
+from app.monitoring.system import SystemMetrics
 from app.utils.config_loader import config
+from app.utils.logger import logger
+
+# Maps each key that collect() actually returns to the config key holding
+# its threshold. Kept explicit rather than assuming they match 1:1 -
+# load_average's threshold is named load_average_limit, not load_average.
+_SYSTEM_METRIC_THRESHOLDS = {
+    "cpu_usage_percent": "cpu_usage_percent",
+    "memory_usage_percent": "memory_usage_percent",
+    "disk_usage_percent": "disk_usage_percent",
+    "load_average": "load_average_limit",
+}
+
+_NETWORK_METRIC_THRESHOLDS = {
+    "network_connections": "network.max_connections",
+}
 
 
 class MonitoringEngine:
@@ -26,13 +41,11 @@ class MonitoringEngine:
         self.network_metrics = NetworkMetrics()
         self.telegram_alert = TelegramAlertSender()
         self.slack_alert = SlackAlertSender()
+        self.email_alert = EmailAlertSender()
         self.healing = HealingActions()
         self.cycle_interval = config.get("engine.cycle_interval_seconds", 60)
 
-        # Set by shutdown() when main.py catches SIGTERM/SIGINT. run_forever()
-        # checks this between cycles (and during the inter-cycle sleep) so a
-        # `docker stop` / `docker compose down` finishes the in-flight cycle
-        # instead of getting killed mid-healing-action.
+        # Set by shutdown() when main.py catches SIGTERM/SIGINT.
         self._shutdown_requested = False
 
         logger.info("Monitoring engine initialized")
@@ -42,18 +55,15 @@ class MonitoringEngine:
         logger.info("Starting monitoring cycle")
 
         try:
-            # 1. Collect metrics
             system_data = self.system_metrics.collect()
             network_data = self.network_metrics.collect()
 
-            # 2. Check thresholds and alert
             if not self.system_metrics.is_healthy(system_data):
-                self._send_alert("system_health", system_data)
+                self._check_and_alert(system_data, _SYSTEM_METRIC_THRESHOLDS)
 
             if not self.network_metrics.is_healthy(network_data):
-                self._send_alert("network_health", network_data)
+                self._check_and_alert(network_data, _NETWORK_METRIC_THRESHOLDS)
 
-            # 3. Trigger healing if needed
             if self.healing.healing_enabled:
                 self._trigger_healing(system_data, network_data)
 
@@ -61,17 +71,30 @@ class MonitoringEngine:
         except Exception as e:
             logger.error("Error in monitoring cycle", extra={"error": str(e)})
 
-    def _send_alert(self, metric_key: str, data: dict) -> None:
-        """Send alert via available channels."""
-        threshold = config.get_threshold(metric_key, 80.0)
-        value = data.get(metric_key, 0.0)
+    def _check_and_alert(self, data: dict, metric_thresholds: dict) -> None:
+        """Compare each metric against its own threshold and alert on breach.
 
-        if value > threshold:
-            message = f"CRITICAL: {metric_key} exceeded threshold ({value} > {threshold})"
-            logger.warning(message)
+        Replaces the old lookup on a synthetic 'system_health'/'network_health'
+        key that never existed in the collected data - that always compared
+        a missing value (0.0) against a missing threshold default, so no
+        alert ever actually fired regardless of real breaches.
+        """
+        for metric_key, threshold_key in metric_thresholds.items():
+            value = data.get(metric_key)
+            if value is None:
+                continue
 
-            self.telegram_alert.send_alert(metric_key, value, threshold, "critical")
-            self.slack_alert.send_alert(metric_key, value, threshold, "critical")
+            threshold = config.get_threshold(threshold_key, default=float("inf"))
+            if value > threshold:
+                self._send_alert(metric_key, value, threshold)
+
+    def _send_alert(self, metric_key: str, value: float, threshold: float) -> None:
+        """Dispatch a single breach alert across every configured channel."""
+        logger.warning(f"CRITICAL: {metric_key} exceeded threshold ({value} > {threshold})")
+
+        self.telegram_alert.send_alert(metric_key, value, threshold, "critical")
+        self.slack_alert.send_alert(metric_key, value, threshold, "critical")
+        self.email_alert.send_alert(metric_key, value, threshold, "critical")
 
     def _trigger_healing(self, system_data: dict, network_data: dict) -> None:
         """Trigger appropriate healing actions."""
@@ -87,19 +110,12 @@ class MonitoringEngine:
             self.healing.kill_process("high-connection-process")
 
     def shutdown(self) -> None:
-        """Request a graceful stop after the current cycle finishes.
-
-        Called from main.py's SIGTERM handler. Does not interrupt a cycle
-        already in progress - it just stops the next one from starting.
-        """
+        """Request a graceful stop after the current cycle finishes."""
         logger.info("Shutdown requested - will stop after current cycle")
         self._shutdown_requested = True
 
     def _interruptible_sleep(self, seconds: int) -> None:
-        """Sleep in 1s increments so shutdown() takes effect within ~1s
-        instead of waiting out the full cycle_interval - matters when
-        cycle_interval is large (e.g. 60s) and SIGTERM arrives mid-sleep.
-        """
+        """Sleep in 1s increments so shutdown() takes effect within ~1s."""
         slept = 0
         while slept < seconds and not self._shutdown_requested:
             time.sleep(min(1, seconds - slept))

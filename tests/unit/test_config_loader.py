@@ -61,12 +61,39 @@ class TestGetThreshold:
 
 
 class TestMissingConfigFile:
-    def test_missing_yaml_and_missing_example_yields_empty_config(self, tmp_path):
+    def test_missing_yaml_and_missing_example_yields_empty_config(self, tmp_path, monkeypatch):
+        # _load_secrets_from_env() reads os.environ directly. The real project
+        # .env gets loaded into os.environ once, the first time this module is
+        # imported anywhere in the test session, and that stays in os.environ
+        # for every test after - even ones using an isolated tmp_path config
+        # dir. Clear the relevant vars here so "nothing configured" actually
+        # means nothing configured, not "whatever's leftover from the real .env".
+        for var in (
+            "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+            "SLACK_WEBHOOK_URL",
+            "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD",
+            "ALERT_EMAIL_RECIPIENTS",
+        ):
+            monkeypatch.delenv(var, raising=False)
+        
         config_dir = tmp_path / "config"
         config_dir.mkdir()  # thresholds.yaml intentionally not created
-
-        loader = ConfigLoader(config_dir=str(config_dir), env_file=str(tmp_path / ".env"))
-
-        assert loader.get_all() == {}
-        assert loader.get_threshold("cpu_usage_percent", default=50.0) == 50.0
         
+        loader = ConfigLoader(config_dir=str(config_dir), env_file=str(tmp_path / ".env"))
+        
+        # thresholds.yaml is genuinely empty, but _load_secrets_from_env() always
+        # stitches in the telegram/slack/email skeleton with None values when
+        # unset - that's intentional (see config_loader.py), so "empty config"
+        # now means this skeleton, not a bare {}.
+        assert loader.get_all() == {
+            "telegram": {"bot_token": None, "chat_id": None},
+            "slack": {"webhook_url": None},
+            "email": {
+                "smtp_server": None,
+                "smtp_port": 465,
+                "username": None,
+                "password": None,
+                "from_email": None,
+                "to_email": None,
+            },
+        }

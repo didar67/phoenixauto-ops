@@ -11,7 +11,7 @@ threshold handling, logging, and error safety.
 """
 
 import time
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 import psutil
 

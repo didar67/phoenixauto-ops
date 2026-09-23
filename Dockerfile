@@ -40,9 +40,11 @@ LABEL org.opencontainers.image.title="PhoenixAuto-Ops" \
 
 WORKDIR /app
 
-# curl/procps kept for the healthcheck and for future healing actions that
-# inspect processes. cron and sudo intentionally dropped - see notes below.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Base image ships perl-base with known CRITICAL CVEs (unused by this app,
+# but Trivy still fails the build on it) - upgrading here pulls whatever
+# patched version Debian security has published since the base image was
+# baked, without needing to change the base image itself.
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     curl \
     bash \
     procps \

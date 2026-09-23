@@ -6,8 +6,8 @@ Supports Gmail, Outlook, or any standard SMTP server with SSL.
 """
 
 import smtplib
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 from app.alerting.base import BaseAlertSender
 
@@ -29,14 +29,30 @@ class EmailAlertSender(BaseAlertSender):
         self.from_email = self.config.get("email.from_email")
         self.to_email = self.config.get("email.to_email")
 
-        if not all([self.smtp_server, self.username, self.password, self.from_email, self.to_email]):
+        if not all(
+            [
+                self.smtp_server,
+                self.username,
+                self.password,
+                self.from_email,
+                self.to_email,
+            ]
+        ):
             self.logger.warning("Email credentials missing in config. Email alerts will be skipped.")
 
-    def _send(self, message: str) -> None:
+    def _send(self, message: str) -> bool:
         """Send email using SMTP_SSL."""
-        if not all([self.smtp_server, self.username, self.password, self.from_email, self.to_email]):
+        if not all(
+            [
+                self.smtp_server,
+                self.username,
+                self.password,
+                self.from_email,
+                self.to_email,
+            ]
+        ):
             self.logger.warning("Skipping email alert - missing credentials")
-            return
+            return False
 
         try:
             msg = MIMEMultipart()
@@ -51,6 +67,7 @@ class EmailAlertSender(BaseAlertSender):
                 server.send_message(msg)
 
             self.logger.debug("Email alert sent successfully")
+            return True
         except Exception as e:
             self.logger.error(f"Failed to send email alert: {e}")
             raise

@@ -11,9 +11,10 @@ Inherits from BaseMetricCollector for consistent
 error handling, logging, and threshold access.
 """
 
-import psutil
 import os
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
+import psutil
 
 from app.monitoring.base import BaseMetricCollector
 from app.utils.logger import logger
