@@ -98,13 +98,9 @@ class SystemMetrics(BaseMetricCollector):
             metrics = self.collect()
 
         cpu_ok = metrics["cpu_usage_percent"] < self.get_threshold("cpu_usage_percent")
-        mem_ok = metrics["memory_usage_percent"] < self.get_threshold(
-            "memory_usage_percent"
-        )
+        mem_ok = metrics["memory_usage_percent"] < self.get_threshold("memory_usage_percent")
 
-        disk_ok = metrics["disk_usage_percent"] < self.get_threshold(
-            "disk_usage_percent"
-        )
+        disk_ok = metrics["disk_usage_percent"] < self.get_threshold("disk_usage_percent")
         load_ok = metrics["load_average"] < self.get_threshold("load_average_limit")
 
         return cpu_ok and mem_ok and disk_ok and load_ok

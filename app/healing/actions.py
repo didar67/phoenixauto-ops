@@ -89,9 +89,7 @@ class HealingActions(BaseHealer):
         try:
             self.logger.debug(f"Executing: {' '.join(cmd)}")
             # `cmd` is constructed only from trusted, allowlisted healing actions.
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=30, check=True
-            )  # nosec B603
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=True)  # nosec B603
             if result.stderr:
                 self.logger.debug(f"Command stderr: {result.stderr.strip()}")
             return True

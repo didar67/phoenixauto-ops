@@ -87,9 +87,7 @@ class ConfigLoader:
                 self._env_loaded = True
                 logger.info(".env file loaded successfully")
             else:
-                logger.warning(
-                    ".env file not found - using system environment variables only"
-                )
+                logger.warning(".env file not found - using system environment variables only")
         except Exception as e:
             logger.error(f"Failed to load .env file: {e}")
 
@@ -119,9 +117,7 @@ class ConfigLoader:
         else:
             example_file = self.config_dir / "thresholds.yaml.example"
             if example_file.exists() and not is_retry:
-                logger.warning(
-                    f"{self.yaml_file.name} not found - copying example template from {example_file.name}"
-                )
+                logger.warning(f"{self.yaml_file.name} not found - copying example template from {example_file.name}")
                 try:
                     self.config_dir.mkdir(parents=True, exist_ok=True)
                     shutil.copy(example_file, self.yaml_file)
@@ -130,9 +126,7 @@ class ConfigLoader:
                     logger.error(f"Failed to copy example config file: {e}")
                     self._config = {}
             else:
-                logger.warning(
-                    "No config files found - starting with empty configuration"
-                )
+                logger.warning("No config files found - starting with empty configuration")
                 self._config = {}
 
     def get(self, key: str, default: Any = None) -> Any:

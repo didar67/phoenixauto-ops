@@ -38,9 +38,7 @@ class EmailAlertSender(BaseAlertSender):
                 self.to_email,
             ]
         ):
-            self.logger.warning(
-                "Email credentials missing in config. Email alerts will be skipped."
-            )
+            self.logger.warning("Email credentials missing in config. Email alerts will be skipped.")
 
     def _send(self, message: str) -> bool:
         """Send email using SMTP_SSL."""
@@ -64,9 +62,7 @@ class EmailAlertSender(BaseAlertSender):
 
             msg.attach(MIMEText(message, "plain"))
 
-            with smtplib.SMTP_SSL(
-                self.smtp_server, self.smtp_port, timeout=10
-            ) as server:
+            with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, timeout=10) as server:
                 server.login(self.username, self.password)
                 server.send_message(msg)
 

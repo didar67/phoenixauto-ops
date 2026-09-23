@@ -23,9 +23,7 @@ class SlackAlertSender(BaseAlertSender):
         self.webhook_url = self.config.get("slack.webhook_url")
 
         if not self.webhook_url:
-            self.logger.warning(
-                "Slack webhook URL missing in config. Alerts will be skipped."
-            )
+            self.logger.warning("Slack webhook URL missing in config. Alerts will be skipped.")
 
     def _send(self, message: str) -> bool:
         """Send message to Slack via Incoming Webhook."""

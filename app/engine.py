@@ -90,9 +90,7 @@ class MonitoringEngine:
 
     def _send_alert(self, metric_key: str, value: float, threshold: float) -> None:
         """Dispatch a single breach alert across every configured channel."""
-        logger.warning(
-            f"CRITICAL: {metric_key} exceeded threshold ({value} > {threshold})"
-        )
+        logger.warning(f"CRITICAL: {metric_key} exceeded threshold ({value} > {threshold})")
 
         self.telegram_alert.send_alert(metric_key, value, threshold, "critical")
         self.slack_alert.send_alert(metric_key, value, threshold, "critical")

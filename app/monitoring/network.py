@@ -83,8 +83,6 @@ class NetworkMetrics(BaseMetricCollector):
         """
         if metrics is None:
             metrics = self.collect()
-        connections_ok = metrics["network_connections"] < self.get_threshold(
-            "network.max_connections", 500
-        )
+        connections_ok = metrics["network_connections"] < self.get_threshold("network.max_connections", 500)
         # Latency threshold can be added later
         return connections_ok

@@ -123,9 +123,7 @@ class StructuredLogger:
             self.logger.addHandler(file_handler)
             self.logger.info("File logging enabled with rotation")
         except Exception as e:
-            self.logger.warning(
-                f"Failed to setup file logging: {e}. Using console only."
-            )
+            self.logger.warning(f"Failed to setup file logging: {e}. Using console only.")
 
         self.logger.info("Structured logger initialized successfully")
 

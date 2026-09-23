@@ -24,9 +24,7 @@ class TelegramAlertSender(BaseAlertSender):
         self.chat_id = self.config.get("telegram.chat_id")
 
         if not self.bot_token or not self.chat_id:
-            self.logger.warning(
-                "Telegram credentials missing in config. Alerts will be skipped."
-            )
+            self.logger.warning("Telegram credentials missing in config. Alerts will be skipped.")
 
     def _send(self, message: str) -> bool:
         """Send message via Telegram Bot API."""
