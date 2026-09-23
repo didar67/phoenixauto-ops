@@ -56,28 +56,28 @@ class ConfigLoader:
         self._load_secrets_from_env()
 
     def _load_secrets_from_env(self) -> None:
-       """Inject alerting credentials from .env into the config tree.
+        """Inject alerting credentials from .env into the config tree.
 
-       thresholds.yaml intentionally never holds secrets (it's the file we
-       commit), so telegram/slack/email credentials only exist in
-       os.environ after _load_environment(). This stitches them into the
-       same dot-notation tree get() already serves everything else from,
-       instead of adding a second, separate lookup path.
-       """
-       self._config.setdefault("telegram", {})
-       self._config["telegram"]["bot_token"] = os.getenv("TELEGRAM_BOT_TOKEN")
-       self._config["telegram"]["chat_id"] = os.getenv("TELEGRAM_CHAT_ID")
+        thresholds.yaml intentionally never holds secrets (it's the file we
+        commit), so telegram/slack/email credentials only exist in
+        os.environ after _load_environment(). This stitches them into the
+        same dot-notation tree get() already serves everything else from,
+        instead of adding a second, separate lookup path.
+        """
+        self._config.setdefault("telegram", {})
+        self._config["telegram"]["bot_token"] = os.getenv("TELEGRAM_BOT_TOKEN")
+        self._config["telegram"]["chat_id"] = os.getenv("TELEGRAM_CHAT_ID")
 
-       self._config.setdefault("slack", {})
-       self._config["slack"]["webhook_url"] = os.getenv("SLACK_WEBHOOK_URL")
+        self._config.setdefault("slack", {})
+        self._config["slack"]["webhook_url"] = os.getenv("SLACK_WEBHOOK_URL")
 
-       self._config.setdefault("email", {})
-       self._config["email"]["smtp_server"] = os.getenv("SMTP_HOST")
-       self._config["email"]["smtp_port"] = int(os.getenv("SMTP_PORT", "465"))
-       self._config["email"]["username"] = os.getenv("SMTP_USER")
-       self._config["email"]["password"] = os.getenv("SMTP_PASSWORD")
-       self._config["email"]["from_email"] = os.getenv("SMTP_USER")
-       self._config["email"]["to_email"] = os.getenv("ALERT_EMAIL_RECIPIENTS")
+        self._config.setdefault("email", {})
+        self._config["email"]["smtp_server"] = os.getenv("SMTP_HOST")
+        self._config["email"]["smtp_port"] = int(os.getenv("SMTP_PORT", "465"))
+        self._config["email"]["username"] = os.getenv("SMTP_USER")
+        self._config["email"]["password"] = os.getenv("SMTP_PASSWORD")
+        self._config["email"]["from_email"] = os.getenv("SMTP_USER")
+        self._config["email"]["to_email"] = os.getenv("ALERT_EMAIL_RECIPIENTS")
 
     def _load_environment(self) -> None:
         """Load variables from .env file if it exists."""
@@ -87,7 +87,9 @@ class ConfigLoader:
                 self._env_loaded = True
                 logger.info(".env file loaded successfully")
             else:
-                logger.warning(".env file not found - using system environment variables only")
+                logger.warning(
+                    ".env file not found - using system environment variables only"
+                )
         except Exception as e:
             logger.error(f"Failed to load .env file: {e}")
 
@@ -117,7 +119,9 @@ class ConfigLoader:
         else:
             example_file = self.config_dir / "thresholds.yaml.example"
             if example_file.exists() and not is_retry:
-                logger.warning(f"{self.yaml_file.name} not found - copying example template from {example_file.name}")
+                logger.warning(
+                    f"{self.yaml_file.name} not found - copying example template from {example_file.name}"
+                )
                 try:
                     self.config_dir.mkdir(parents=True, exist_ok=True)
                     shutil.copy(example_file, self.yaml_file)
@@ -126,7 +130,9 @@ class ConfigLoader:
                     logger.error(f"Failed to copy example config file: {e}")
                     self._config = {}
             else:
-                logger.warning("No config files found - starting with empty configuration")
+                logger.warning(
+                    "No config files found - starting with empty configuration"
+                )
                 self._config = {}
 
     def get(self, key: str, default: Any = None) -> Any:
