@@ -8,14 +8,14 @@ Coordinates monitoring, alerting, and self-healing cycles.
 
 import time
 
-from app.monitoring.system import SystemMetrics
-from app.monitoring.network import NetworkMetrics
-from app.alerting.telegram import TelegramAlertSender
-from app.alerting.slack import SlackAlertSender
 from app.alerting.email import EmailAlertSender
+from app.alerting.slack import SlackAlertSender
+from app.alerting.telegram import TelegramAlertSender
 from app.healing.actions import HealingActions
-from app.utils.logger import logger
+from app.monitoring.network import NetworkMetrics
+from app.monitoring.system import SystemMetrics
 from app.utils.config_loader import config
+from app.utils.logger import logger
 
 # Maps each key that collect() actually returns to the config key holding
 # its threshold. Kept explicit rather than assuming they match 1:1 -
@@ -130,4 +130,3 @@ class MonitoringEngine:
             self._interruptible_sleep(self.cycle_interval)
 
         logger.info("Monitoring engine stopped")
-        
