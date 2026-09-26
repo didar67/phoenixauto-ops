@@ -106,15 +106,16 @@ class TestTriggerHealing:
         engine.healing.clear_cache.assert_called_once_with()
 
     def test_high_connection_count_triggers_process_kill(self, engine, monkeypatch):
-        # Healing now reads the threshold from config instead of a hardcoded
-        # 400, so pin it here rather than depending on whatever
-        # thresholds.yaml happens to have configured.
+        # connections=50 would NOT cross the old hardcoded ">400" check but
+        # DOES cross a configured threshold of 10 - this discriminates
+        # between "reads from config" and "still hardcoded", unlike a value
+        # like 550 which would pass either way.
         monkeypatch.setattr(
             "app.engine.config.get_threshold",
-            lambda metric_key, default=None: 500.0,
+            lambda metric_key, default=None: 10.0,
         )
 
-        engine._trigger_healing({"cpu_usage_percent": 10.0}, {"network_connections": 550})
+        engine._trigger_healing({"cpu_usage_percent": 10.0}, {"network_connections": 50})
 
         engine.healing.kill_process.assert_called_once_with("high-connection-process")
 
