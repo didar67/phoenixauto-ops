@@ -89,18 +89,32 @@ class TestRunCycle:
 
 
 class TestTriggerHealing:
-    def test_high_cpu_triggers_service_restart(self, engine):
+    def test_high_cpu_triggers_service_restart(self, engine, monkeypatch):
+        monkeypatch.setattr(
+            "app.engine.config.get_threshold",
+            lambda metric_key, default=None: 80.0,
+        )
         engine._trigger_healing({"cpu_usage_percent": 95.0}, {"network_connections": 10})
-
         engine.healing.restart_service.assert_called_once_with("high-cpu-service")
 
-    def test_high_memory_triggers_cache_clear(self, engine):
-        engine._trigger_healing({"memory_usage_percent": 97.0}, {"network_connections": 10})
+    def test_high_memory_triggers_cache_clear(self, engine, monkeypatch):
+        monkeypatch.setattr(
+            "app.engine.config.get_threshold",
+            lambda metric_key, default=None: 85.0,
+        )
+        engine._trigger_healing({"memory_usage_percent": 96.0}, {"network_connections": 10})
+        engine.healing.clear_cache.assert_called_once_with()
 
-        engine.healing.clear_cache.assert_called_once()
+    def test_high_connection_count_triggers_process_kill(self, engine, monkeypatch):
+        # Healing now reads the threshold from config instead of a hardcoded
+        # 400, so pin it here rather than depending on whatever
+        # thresholds.yaml happens to have configured.
+        monkeypatch.setattr(
+            "app.engine.config.get_threshold",
+            lambda metric_key, default=None: 500.0,
+        )
 
-    def test_high_connection_count_triggers_process_kill(self, engine):
-        engine._trigger_healing({"cpu_usage_percent": 10.0}, {"network_connections": 450})
+        engine._trigger_healing({"cpu_usage_percent": 10.0}, {"network_connections": 550})
 
         engine.healing.kill_process.assert_called_once_with("high-connection-process")
 
