@@ -101,7 +101,7 @@ class MonitoringEngine:
 
         Reads the same thresholds.yaml values the alerting path uses, instead
         of separate hardcoded numbers - those had drifted out of sync with
-      config (e.g. network healing checked >400 while the configured alert
+        config (e.g. network healing checked >400 while the configured alert
           threshold was 5), so a breach could alert without ever healing.
         """
         logger.info("Triggering self-healing actions")
