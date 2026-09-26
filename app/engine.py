@@ -97,16 +97,25 @@ class MonitoringEngine:
         self.email_alert.send_alert(metric_key, value, threshold, "critical")
 
     def _trigger_healing(self, system_data: dict, network_data: dict) -> None:
-        """Trigger appropriate healing actions."""
+        """Trigger appropriate healing actions.
+
+        Reads the same thresholds.yaml values the alerting path uses, instead
+        of separate hardcoded numbers - those had drifted out of sync with
+        config (e.g. network healing checked >400 while the configured alert
+          threshold was 5), so a breach could alert without ever healing.
+        """
         logger.info("Triggering self-healing actions")
 
-        if system_data.get("cpu_usage_percent", 0) > 90:
-            self.healing.restart_service("high-cpu-service")  # example
+        cpu = system_data.get("cpu_usage_percent", 0)
+        if cpu > config.get_threshold("cpu_usage_percent"):
+            self.healing.restart_service("high-cpu-service")
 
-        if system_data.get("memory_usage_percent", 0) > 95:
+        memory = system_data.get("memory_usage_percent", 0)
+        if memory > config.get_threshold("memory_usage_percent"):
             self.healing.clear_cache()
 
-        if network_data.get("network_connections", 0) > 400:
+        connections = network_data.get("network_connections", 0)
+        if connections > config.get_threshold("network.max_connections", 500):
             self.healing.kill_process("high-connection-process")
 
     def shutdown(self) -> None:

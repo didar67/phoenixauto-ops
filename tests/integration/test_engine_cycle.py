@@ -89,18 +89,33 @@ class TestRunCycle:
 
 
 class TestTriggerHealing:
-    def test_high_cpu_triggers_service_restart(self, engine):
+    def test_high_cpu_triggers_service_restart(self, engine, monkeypatch):
+        monkeypatch.setattr(
+            "app.engine.config.get_threshold",
+            lambda metric_key, default=None: 80.0,
+        )
         engine._trigger_healing({"cpu_usage_percent": 95.0}, {"network_connections": 10})
-
         engine.healing.restart_service.assert_called_once_with("high-cpu-service")
 
-    def test_high_memory_triggers_cache_clear(self, engine):
-        engine._trigger_healing({"memory_usage_percent": 97.0}, {"network_connections": 10})
+    def test_high_memory_triggers_cache_clear(self, engine, monkeypatch):
+        monkeypatch.setattr(
+            "app.engine.config.get_threshold",
+            lambda metric_key, default=None: 85.0,
+        )
+        engine._trigger_healing({"memory_usage_percent": 96.0}, {"network_connections": 10})
+        engine.healing.clear_cache.assert_called_once_with()
 
-        engine.healing.clear_cache.assert_called_once()
+    def test_high_connection_count_triggers_process_kill(self, engine, monkeypatch):
+        # connections=50 would NOT cross the old hardcoded ">400" check but
+        # DOES cross a configured threshold of 10 - this discriminates
+        # between "reads from config" and "still hardcoded", unlike a value
+        # like 550 which would pass either way.
+        monkeypatch.setattr(
+            "app.engine.config.get_threshold",
+            lambda metric_key, default=None: 10.0,
+        )
 
-    def test_high_connection_count_triggers_process_kill(self, engine):
-        engine._trigger_healing({"cpu_usage_percent": 10.0}, {"network_connections": 450})
+        engine._trigger_healing({"cpu_usage_percent": 10.0}, {"network_connections": 50})
 
         engine.healing.kill_process.assert_called_once_with("high-connection-process")
 
