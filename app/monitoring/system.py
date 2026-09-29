@@ -12,6 +12,7 @@ error handling, logging, and threshold access.
 """
 
 import os
+import time
 from typing import Any, Dict, Optional
 
 import psutil
@@ -104,3 +105,37 @@ class SystemMetrics(BaseMetricCollector):
         load_ok = metrics["load_average"] < self.get_threshold("load_average_limit")
 
         return cpu_ok and mem_ok and disk_ok and load_ok
+
+    def get_top_cpu_process(self) -> Optional[str]:
+        """Identify the process currently consuming the most CPU.
+
+        Healing previously always restarted a single hardcoded service name
+        regardless of what actually caused the breach. This lets the
+        healing layer target the real culprit instead of guessing.
+        """
+        try:
+            # First call to cpu_percent() on each process always returns 0.0 -
+            # it needs a baseline. Prime it, then wait briefly for a real sample.
+            for proc in psutil.process_iter(["pid", "name"]):
+                try:
+                    proc.cpu_percent(interval=None)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+
+            time.sleep(0.5)
+
+            top_process = None
+            top_cpu = 0.0
+            for proc in psutil.process_iter(["pid", "name"]):
+                try:
+                    cpu = proc.cpu_percent(interval=None)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+                if cpu > top_cpu:
+                    top_cpu = cpu
+                    top_process = proc.info["name"]
+
+            return top_process
+        except Exception as e:
+            self.logger.warning(f"Failed to identify top CPU process: {e}")
+            return None
