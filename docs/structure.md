@@ -40,6 +40,7 @@ phoenixauto-ops/
 │   ├── service_manager.sh          # systemctl wrapper with input validation and logging
 │   ├── cleanup.sh                  # Disk/cache cleanup and temporary file maintenance
 │   ├── run_monitor.sh              # Cron-safe runner: activates venv and runs `python3 -m app.main`
+│   ├── watchdog.sh                 # Independent log-freshness check; alerts via Slack if the engine itself has stopped
 │   └── .gitkeep
 │
 ├── cron/                           # Scheduling setup
@@ -197,6 +198,10 @@ Production-safe cron entry point:
 1. Activates `venv/` relative to the script's directory
 2. Sources `.env` for any shell-level variable needs
 3. Executes the application as a Python module using `python3 -m app.main` to properly resolve relative imports
+
+### `scripts/watchdog.sh`
+
+Runs independently of the main engine, via its own separate cron entry. Checks whether `logs/phoenixauto-ops.log` has been written to within the last 5 minutes; if not, sends a Slack alert since the engine process itself may have crashed or hung. This exists because the main engine has no way to detect or report its own failure - a crashed engine simply stops logging, silently.
 
 ### `cron/setup_cron.sh`
 
