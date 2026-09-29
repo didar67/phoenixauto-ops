@@ -17,9 +17,6 @@ from app.monitoring.system import SystemMetrics
 from app.utils.config_loader import config
 from app.utils.logger import logger
 
-# Maps each key that collect() actually returns to the config key holding
-# its threshold. Kept explicit rather than assuming they match 1:1 -
-# load_average's threshold is named load_average_limit, not load_average.
 _SYSTEM_METRIC_THRESHOLDS = {
     "cpu_usage_percent": "cpu_usage_percent",
     "memory_usage_percent": "memory_usage_percent",
@@ -45,7 +42,13 @@ class MonitoringEngine:
         self.healing = HealingActions()
         self.cycle_interval = config.get("engine.cycle_interval_seconds", 60)
 
-        # Set by shutdown() when main.py catches SIGTERM/SIGINT.
+        # Tracks how many *consecutive* cycles each metric has been in
+        # breach. A single spiky cycle (a batch job, a brief GC pause)
+        # shouldn't trigger an alert or a service restart on its own -
+        # only a sustained breach should. Reset to 0 the moment a metric
+        # comes back under threshold.
+        self._breach_streak: dict = {}
+
         self._shutdown_requested = False
 
         logger.info("Monitoring engine initialized")
@@ -58,64 +61,82 @@ class MonitoringEngine:
             system_data = self.system_metrics.collect()
             network_data = self.network_metrics.collect()
 
-            if not self.system_metrics.is_healthy(system_data):
-                self._check_and_alert(system_data, _SYSTEM_METRIC_THRESHOLDS)
+            sustained = {}
+            sustained.update(self._update_breach_streaks(system_data, _SYSTEM_METRIC_THRESHOLDS))
+            sustained.update(self._update_breach_streaks(network_data, _NETWORK_METRIC_THRESHOLDS))
 
-            if not self.network_metrics.is_healthy(network_data):
-                self._check_and_alert(network_data, _NETWORK_METRIC_THRESHOLDS)
+            for metric_key, (value, threshold) in sustained.items():
+                self._send_alert(metric_key, value, threshold)
 
             if self.healing.healing_enabled:
-                self._trigger_healing(system_data, network_data)
+                self._trigger_healing(system_data, network_data, sustained)
 
             logger.info("Monitoring cycle completed successfully")
         except Exception as e:
             logger.error("Error in monitoring cycle", extra={"error": str(e)})
 
-    def _check_and_alert(self, data: dict, metric_thresholds: dict) -> None:
-        """Compare each metric against its own threshold and alert on breach.
+    def _update_breach_streaks(self, data: dict, metric_thresholds: dict) -> dict:
+        """Update each metric's consecutive-breach counter and return the
+        ones that have just crossed the required streak length this cycle.
 
-        Replaces the old lookup on a synthetic 'system_health'/'network_health'
-        key that never existed in the collected data - that always compared
-        a missing value (0.0) against a missing threshold default, so no
-        alert ever actually fired regardless of real breaches.
+        Returns: {metric_key: (value, threshold)} for metrics ready to act on.
         """
+        required = config.get("auto_healing.consecutive_breaches_required", 3)
+        ready_to_act = {}
+
         for metric_key, threshold_key in metric_thresholds.items():
             value = data.get(metric_key)
             if value is None:
                 continue
 
             threshold = config.get_threshold(threshold_key, default=float("inf"))
+
             if value > threshold:
-                self._send_alert(metric_key, value, threshold)
+                self._breach_streak[metric_key] = self._breach_streak.get(metric_key, 0) + 1
+            else:
+                self._breach_streak[metric_key] = 0
+                continue
+
+            streak = self._breach_streak[metric_key]
+            if streak == 1:
+                logger.info(f"{metric_key} breached threshold ({value} > {threshold}) - streak 1/{required}")
+            elif streak < required:
+                logger.info(f"{metric_key} still breaching - streak {streak}/{required}")
+            else:
+                logger.warning(
+                    f"CRITICAL: {metric_key} sustained breach for {streak} consecutive cycles "
+                    f"({value} > {threshold})"
+                )
+                ready_to_act[metric_key] = (value, threshold)
+
+        return ready_to_act
 
     def _send_alert(self, metric_key: str, value: float, threshold: float) -> None:
         """Dispatch a single breach alert across every configured channel."""
-        logger.warning(f"CRITICAL: {metric_key} exceeded threshold ({value} > {threshold})")
-
         self.telegram_alert.send_alert(metric_key, value, threshold, "critical")
         self.slack_alert.send_alert(metric_key, value, threshold, "critical")
         self.email_alert.send_alert(metric_key, value, threshold, "critical")
 
-    def _trigger_healing(self, system_data: dict, network_data: dict) -> None:
-        """Trigger appropriate healing actions.
-
-        Reads the same thresholds.yaml values the alerting path uses, instead
-        of separate hardcoded numbers - those had drifted out of sync with
-        config (e.g. network healing checked >400 while the configured alert
-          threshold was 5), so a breach could alert without ever healing.
+    def _trigger_healing(self, system_data: dict, network_data: dict, sustained: dict) -> None:
+        """Trigger healing only for metrics that just reached a sustained
+        breach this cycle - not on every cycle a metric happens to still
+        be over threshold, and not on a single transient spike.
         """
+        if not sustained:
+            return
+
         logger.info("Triggering self-healing actions")
 
-        cpu = system_data.get("cpu_usage_percent", 0)
-        if cpu > config.get_threshold("cpu_usage_percent"):
-            self.healing.restart_service("high-cpu-service")
+        if "cpu_usage_percent" in sustained:
+            culprit = self.system_metrics.get_top_cpu_process()
+            target = culprit or "high-cpu-service"
+            logger.warning(f"High CPU culprit identified: {target}")
+            self.healing.restart_service(target)
 
-        memory = system_data.get("memory_usage_percent", 0)
-        if memory > config.get_threshold("memory_usage_percent"):
+        if "memory_usage_percent" in sustained:
             self.healing.clear_cache()
 
-        connections = network_data.get("network_connections", 0)
-        if connections > config.get_threshold("network.max_connections", 500):
+        if "network_connections" in sustained:
             self.healing.kill_process("high-connection-process")
 
     def shutdown(self) -> None:

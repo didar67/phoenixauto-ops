@@ -5,6 +5,7 @@ mocked, so assertions stay focused on the engine's own orchestration -
 psutil, HTTP, and subprocess behavior are already covered by their own
 unit test modules.
 """
+
 import pytest
 
 from app.engine import MonitoringEngine
@@ -12,15 +13,13 @@ from app.engine import MonitoringEngine
 
 @pytest.fixture
 def engine(patch_config, mocker):
-    patch_config(
-        get_values={"engine.cycle_interval_seconds": 60},
-        threshold_values={"system_health": 80.0, "network_health": 500.0},
-    )
+    patch_config(get_values={"engine.cycle_interval_seconds": 60})
 
     mock_system_cls = mocker.patch("app.engine.SystemMetrics")
     mock_network_cls = mocker.patch("app.engine.NetworkMetrics")
     mock_telegram_cls = mocker.patch("app.engine.TelegramAlertSender")
     mock_slack_cls = mocker.patch("app.engine.SlackAlertSender")
+    mock_email_cls = mocker.patch("app.engine.EmailAlertSender")
     mock_healing_cls = mocker.patch("app.engine.HealingActions")
 
     instance = MonitoringEngine()
@@ -28,6 +27,7 @@ def engine(patch_config, mocker):
     instance.network_metrics = mock_network_cls.return_value
     instance.telegram_alert = mock_telegram_cls.return_value
     instance.slack_alert = mock_slack_cls.return_value
+    instance.email_alert = mock_email_cls.return_value
     instance.healing = mock_healing_cls.return_value
     instance.healing.healing_enabled = True
 
@@ -47,11 +47,13 @@ class TestRunCycle:
         engine.slack_alert.send_alert.assert_not_called()
 
     def test_system_breach_dispatches_alert_on_both_channels(self, engine, monkeypatch):
-        # Pin the threshold lookup so this test doesn't depend on whatever
-        # cpu_usage_percent happens to be set to in thresholds.yaml.
         monkeypatch.setattr(
             "app.engine.config.get_threshold",
             lambda metric_key, default=None: 80.0,
+        )
+        monkeypatch.setattr(
+            "app.engine.config.get",
+            lambda key, default=None: 2 if key == "auto_healing.consecutive_breaches_required" else default,
         )
 
         engine.system_metrics.collect.return_value = {"cpu_usage_percent": 92.0}
@@ -59,14 +61,32 @@ class TestRunCycle:
         engine.system_metrics.is_healthy.return_value = False
         engine.network_metrics.is_healthy.return_value = True
 
-        engine.run_cycle()
+        engine.run_cycle()  # streak 1/2
+        engine.run_cycle()  # streak 2/2 -> alert fires
 
-        engine.telegram_alert.send_alert.assert_called_once_with(
-            "cpu_usage_percent", 92.0, 80.0, "critical"
+        engine.telegram_alert.send_alert.assert_called_once_with("cpu_usage_percent", 92.0, 80.0, "critical")
+        engine.slack_alert.send_alert.assert_called_once_with("cpu_usage_percent", 92.0, 80.0, "critical")
+
+    def test_alert_waits_for_consecutive_breaches(self, engine, monkeypatch):
+        monkeypatch.setattr(
+            "app.engine.config.get_threshold",
+            lambda metric_key, default=None: 80.0,
         )
-        engine.slack_alert.send_alert.assert_called_once_with(
-            "cpu_usage_percent", 92.0, 80.0, "critical"
+        monkeypatch.setattr(
+            "app.engine.config.get",
+            lambda key, default=None: 2 if key == "auto_healing.consecutive_breaches_required" else default,
         )
+
+        engine.system_metrics.collect.return_value = {"cpu_usage_percent": 92.0}
+        engine.network_metrics.collect.return_value = {"network_connections": 10}
+        engine.system_metrics.is_healthy.return_value = False
+        engine.network_metrics.is_healthy.return_value = True
+
+        engine.run_cycle()  # streak 1/2 -> no alert yet
+        engine.telegram_alert.send_alert.assert_not_called()
+
+        engine.run_cycle()  # streak 2/2 -> alert fires
+        engine.telegram_alert.send_alert.assert_called_once_with("cpu_usage_percent", 92.0, 80.0, "critical")
 
     def test_a_collector_exception_does_not_crash_the_cycle(self, engine):
         # engine.py wraps run_cycle() in try/except - one bad cycle should
@@ -89,42 +109,42 @@ class TestRunCycle:
 
 
 class TestTriggerHealing:
-    def test_high_cpu_triggers_service_restart(self, engine, monkeypatch):
-        monkeypatch.setattr(
-            "app.engine.config.get_threshold",
-            lambda metric_key, default=None: 80.0,
+    def test_high_cpu_triggers_service_restart(self, engine):
+        # get_top_cpu_process is a Mock here (system_metrics is mocked) -
+        # force it to None so the code falls back to the known service name,
+        # rather than asserting against whatever a MagicMock returns.
+        engine.system_metrics.get_top_cpu_process.return_value = None
+
+        engine._trigger_healing(
+            {"cpu_usage_percent": 95.0},
+            {"network_connections": 10},
+            {"cpu_usage_percent": (95.0, 80.0)},  # sustained: {metric: (value, threshold)}
         )
-        engine._trigger_healing({"cpu_usage_percent": 95.0}, {"network_connections": 10})
+
         engine.healing.restart_service.assert_called_once_with("high-cpu-service")
 
-    def test_high_memory_triggers_cache_clear(self, engine, monkeypatch):
-        monkeypatch.setattr(
-            "app.engine.config.get_threshold",
-            lambda metric_key, default=None: 85.0,
+    def test_high_memory_triggers_cache_clear(self, engine):
+        engine._trigger_healing(
+            {"memory_usage_percent": 96.0},
+            {"network_connections": 10},
+            {"memory_usage_percent": (96.0, 85.0)},
         )
-        engine._trigger_healing({"memory_usage_percent": 96.0}, {"network_connections": 10})
         engine.healing.clear_cache.assert_called_once_with()
 
-    def test_high_connection_count_triggers_process_kill(self, engine, monkeypatch):
-        # connections=50 would NOT cross the old hardcoded ">400" check but
-        # DOES cross a configured threshold of 10 - this discriminates
-        # between "reads from config" and "still hardcoded", unlike a value
-        # like 550 which would pass either way.
-        monkeypatch.setattr(
-            "app.engine.config.get_threshold",
-            lambda metric_key, default=None: 10.0,
+    def test_high_connection_count_triggers_process_kill(self, engine):
+        engine._trigger_healing(
+            {"cpu_usage_percent": 10.0},
+            {"network_connections": 50},
+            {"network_connections": (50, 10.0)},
         )
-
-        engine._trigger_healing({"cpu_usage_percent": 10.0}, {"network_connections": 50})
-
         engine.healing.kill_process.assert_called_once_with("high-connection-process")
 
     def test_nothing_triggered_when_all_metrics_nominal(self, engine):
         engine._trigger_healing(
             {"cpu_usage_percent": 30.0, "memory_usage_percent": 40.0},
             {"network_connections": 50},
+            {},  # kono metric sustained breach e nei
         )
-
         engine.healing.restart_service.assert_not_called()
         engine.healing.clear_cache.assert_not_called()
         engine.healing.kill_process.assert_not_called()
@@ -153,4 +173,3 @@ class TestShutdown:
         engine._interruptible_sleep(60)
 
         assert mock_sleep.call_count == 2
-        
