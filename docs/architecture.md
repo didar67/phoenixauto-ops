@@ -144,6 +144,21 @@ PhoenixAuto-Ops is designed around modularity, separation of concerns, and confi
 
 ---
 
+## Known Limitations & Future Work
+
+- **Single-node only**: the engine runs as one process on one machine.
+  If that machine or process dies, monitoring stops - `scripts/watchdog.sh`
+  mitigates this via an independent cron check, but true high-availability
+  would require a multi-node/leader-election setup.
+- **No alert escalation**: a missed alert has no automatic escalation to
+  a second responder. Acceptable for a single-operator setup; a team
+  environment would need this.
+- **No long-term trend storage**: metrics aren't persisted beyond the
+  current log file - no historical dashboards or trend analysis across
+  days/weeks (a time-series backend like Prometheus would add this).
+
+---
+
 ## Design Patterns
 
 ### Abstract Base Classes
