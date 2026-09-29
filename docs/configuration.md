@@ -48,6 +48,8 @@ PhoenixAuto-Ops uses a two-layer configuration system: a YAML file for operation
 | `auto_healing.dry_run` | `false` | bool | When `true`, logs intended actions without executing shell scripts |
 | `auto_healing.max_retry_attempts` | `3` | int | How many times a failed healing action is retried before giving up |
 | `auto_healing.cooldown_seconds` | `300` | int | Minimum seconds between repeated healing for the same trigger type |
+| `auto_healing.cooldown_seconds` | `300` | int | Minimum seconds between repeated healing for the same trigger type |
+| `auto_healing.consecutive_breaches_required` | `3` | int | Number of consecutive monitoring cycles a metric must stay in breach before an alert or healing action fires - prevents a single transient spike from triggering a restart |
 
 ### Threshold Tuning Guide
 
