@@ -98,15 +98,16 @@ class MonitoringEngine:
                 continue
 
             streak = self._breach_streak[metric_key]
-            if streak == 1:
-                logger.info(f"{metric_key} breached threshold ({value} > {threshold}) - streak 1/{required}")
-            elif streak < required:
-                logger.info(f"{metric_key} still breaching - streak {streak}/{required}")
-            else:
+            if streak >= required:
                 logger.warning(
                     f"CRITICAL: {metric_key} sustained breach for {streak} consecutive cycles "
                     f"({value} > {threshold})"
                 )
+                ready_to_act[metric_key] = (value, threshold)
+            elif streak == 1:
+                logger.info(f"{metric_key} breached threshold ({value} > {threshold}) - streak 1/{required}")
+            else:
+                logger.info(f"{metric_key} still breaching - streak {streak}/{required}")
                 ready_to_act[metric_key] = (value, threshold)
 
         return ready_to_act
@@ -119,8 +120,10 @@ class MonitoringEngine:
 
     def _trigger_healing(self, system_data: dict, network_data: dict, sustained: dict) -> None:
         """Trigger healing only for metrics that just reached a sustained
-        breach this cycle - not on every cycle a metric happens to still
-        be over threshold, and not on a single transient spike.
+        breach this cycle. Each action is isolated in its own try/except -
+        one action's failure (e.g. restart_service failing in an
+        environment with no systemd) must not prevent the other sustained
+        breaches in the same cycle from getting their own healing attempt.
         """
         if not sustained:
             return
@@ -128,16 +131,25 @@ class MonitoringEngine:
         logger.info("Triggering self-healing actions")
 
         if "cpu_usage_percent" in sustained:
-            culprit = self.system_metrics.get_top_cpu_process()
-            target = culprit or "high-cpu-service"
-            logger.warning(f"High CPU culprit identified: {target}")
-            self.healing.restart_service(target)
+            try:
+                culprit = self.system_metrics.get_top_cpu_process()
+                target = culprit or "high-cpu-service"
+                logger.warning(f"High CPU culprit identified: {target}")
+                self.healing.restart_service(target)
+            except Exception as e:
+                logger.error(f"CPU healing action failed: {e}")
 
         if "memory_usage_percent" in sustained:
-            self.healing.clear_cache()
+            try:
+                self.healing.clear_cache()
+            except Exception as e:
+                logger.error(f"Memory healing action failed: {e}")
 
         if "network_connections" in sustained:
-            self.healing.kill_process("high-connection-process")
+            try:
+                self.healing.kill_process("high-connection-process")
+            except Exception as e:
+                logger.error(f"Network healing action failed: {e}")
 
     def shutdown(self) -> None:
         """Request a graceful stop after the current cycle finishes."""
