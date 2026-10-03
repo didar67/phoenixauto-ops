@@ -72,6 +72,7 @@ phoenixauto-ops/
 ├── .env                    # Secrets — NEVER commit (git-ignored)
 ├── .env.example            # Secret template — safe to commit
 ├── setup.sh                # One-command setup script
+├── pyproject.toml          # Tooling configuration (Black line-length, isort settings) 
 └── requirements.txt        # Python dependencies for PhoenixAuto-Ops
 ```
 
