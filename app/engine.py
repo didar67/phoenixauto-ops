@@ -108,7 +108,6 @@ class MonitoringEngine:
                 logger.info(f"{metric_key} breached threshold ({value} > {threshold}) - streak 1/{required}")
             else:
                 logger.info(f"{metric_key} still breaching - streak {streak}/{required}")
-                ready_to_act[metric_key] = (value, threshold)
 
         return ready_to_act
 
