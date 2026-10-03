@@ -74,6 +74,7 @@ This document covers the internal design of PhoenixAuto-Ops: component responsib
 | `EmailAlertSender` | `email.py` | SMTP/TLS email delivery |
 
 `BaseAlertSender` keeps a cooldown timestamp per metric key to prevent repeated alerts for the same metric within the cooldown window. Channel-specific classes only implement `_dispatch(payload)`.
+Each channel's `_send()` returns `True` on an actual dispatch attempt and `False` when the channel is unconfigured and the send was intentionally skipped (missing credentials) - `send_alert()` only logs "Alert sent" and starts the cooldown timer on `True`, so a skipped channel is never misreported as delivered.
 
 ### `app/healing/` — Remediation Layer
 
@@ -84,7 +85,7 @@ This document covers the internal design of PhoenixAuto-Ops: component responsib
 | `BaseHealer` | `base.py` | Dry-run mode, retry logic, and cooldown handling |
 | `HealingActions` | `actions.py` | Executes shell-based remediation scripts |
 
-Implemented actions include service restart, cache cleanup, and log rotation. All subprocess calls use a timeout so a stuck script does not block the monitoring cycle. When `auto_healing.dry_run` is enabled, actions are logged but not executed.
+Implemented actions include service restart, cache cleanup, and log rotation. `kill_process()` treats `pkill`'s own exit code 1 ("no process matched") as success rather than a failure - the expected outcome on any cycle after a prior cycle already cleared the target, not a real error. Each sustained-breach healing action (CPU/memory/network) is executed in its own isolated `try/except` inside `_trigger_healing()`, so one action failing (e.g. `restart_service` with no matching systemd unit) does not prevent the other sustained breaches in the same cycle from getting their own healing attempt. All subprocess calls use a timeout so a stuck script does not block the monitoring cycle. When `auto_healing.dry_run` is enabled, actions are logged but not executed.
 
 ### `app/utils/` — Support Layer
 
@@ -105,26 +106,34 @@ Step 1 — COLLECT
           └── SystemMetrics.collect()  → metric_snapshot dict
           └── NetworkMetrics.collect() → appended to snapshot
 
-Step 2 — EVALUATE
-  engine iterates snapshot keys against thresholds.yaml values
-    └── cpu_percent 91.3 > threshold 85.0 → BREACH flagged
-    └── memory_percent 78.2 < threshold 90.0 → OK, skipped
+Step 2 — EVALUATE (streak-gated)
+  engine compares each metric to its own thresholds.yaml value every cycle
+    └── cpu_usage_percent 91.3 > threshold 85.0 → streak[cpu] += 1
+    └── memory_usage_percent 78.2 < threshold 90.0 → streak[memory] = 0
+  a metric only becomes a "sustained breach" once its streak reaches
+  auto_healing.consecutive_breaches_required (default 3) - a single
+  spiky cycle logs "streak 1/3" and takes no further action
 
-Step 3 — ALERT (cooldown-aware)
-  for each flagged breach:
-    └── TelegramAlertSender.send(breach) → checks cooldown → dispatches
-    └── SlackAlertSender.send(breach)    → checks cooldown → dispatches
-    └── EmailAlertSender.send(breach)    → checks cooldown → dispatches
-  cooldown prevents re-alerting the same metric within cooldown_seconds
+Step 3 — ALERT (cooldown-aware, sustained breaches only)
+  for each metric that just reached its required streak this cycle:
+    └── TelegramAlertSender.send_alert(...) → checks cooldown → dispatches
+    └── SlackAlertSender.send_alert(...)    → checks cooldown → dispatches
+    └── EmailAlertSender.send_alert(...)    → checks cooldown → dispatches
+  cooldown prevents re-alerting the same metric within cooldown_seconds,
+  independent of the streak counter
 
-Step 4 — HEAL (dry-run / retry-aware)
-  if auto_healing.enabled and breach severity >= threshold:
-    └── HealingActions.dispatch(breach_type)
-          └── dry_run=true  → log intended action, return
-          └── dry_run=false → subprocess.run(script, timeout=30)
-                └── exit 0  → log success
-                └── exit !=0 → retry up to max_retry_attempts
-                      └── exhausted → log CRITICAL, skip
+Step 4 — HEAL (per-metric isolated, dry-run / retry-aware)
+  if auto_healing.enabled, for each metric that just reached sustained breach:
+    └── cpu_usage_percent  → identify real top-CPU process → restart_service(target)
+    └── memory_usage_percent → clear_cache()
+    └── network_connections  → kill_process("high-connection-process")
+  each action runs in its own try/except - one action failing does not
+  skip the others in the same cycle
+    └── dry_run=true  → log intended action, return
+    └── dry_run=false → subprocess.run(script, timeout=30)
+          └── exit 0  → log success
+          └── exit !=0 → retry up to max_retry_attempts
+                └── exhausted → log error for that action only, continue
 
 Step 5 — LOG
   all steps emit structured JSON to logs/phoenixauto_ops.log
@@ -146,16 +155,26 @@ PhoenixAuto-Ops is designed around modularity, separation of concerns, and confi
 
 ## Known Limitations & Future Work
 
-- **Single-node only**: the engine runs as one process on one machine.
-  If that machine or process dies, monitoring stops - `scripts/watchdog.sh`
-  mitigates this via an independent cron check, but true high-availability
-  would require a multi-node/leader-election setup.
+- **Single-node only**: the engine runs as one process on one machine. If
+  that machine or process dies, monitoring stops. `scripts/watchdog.sh`
+  mitigates this via an independent cron-based log-freshness check that
+  can alert even when the main engine itself is down, but true
+  high-availability would require a multi-node/leader-election setup.
 - **No alert escalation**: a missed alert has no automatic escalation to
   a second responder. Acceptable for a single-operator setup; a team
   environment would need this.
 - **No long-term trend storage**: metrics aren't persisted beyond the
   current log file - no historical dashboards or trend analysis across
-  days/weeks (a time-series backend like Prometheus would add this).
+  days/weeks (a time-series backend would add this).
+- **Healing restart target is CPU-only dynamic**: `get_top_cpu_process()`
+  identifies the real highest-CPU process to restart, but memory and
+  network healing (`clear_cache`, `kill_process`) still act on fixed
+  targets rather than diagnosing the specific cause.
+- **Docker: `restart_service()` cannot succeed inside a container** - no
+  systemd/PID 1 init and no `sudo` binary by design (see
+  [docs/docker.md](docker.md#known-limitation)). Monitoring and alerting
+  work correctly in Docker; `clear_cache`/`kill_process` also work since
+  they don't depend on systemd.
 
 ---
 

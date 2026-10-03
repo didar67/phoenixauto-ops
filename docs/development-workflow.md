@@ -37,6 +37,9 @@ main
  ├── feat/docker-healthcheck     ──► merged → Log-based liveness HEALTHCHECK
  ├── feat/docker-documentation   ──► merged → docs/docker.md (Dockerfile/compose reference, host-monitoring design, WSL2 limitation)
  └── feat/pytest-suite           ──► merged → 48-case pytest suite (unit + integration), 80% coverage
+  ├── fix/alerting-config-secrets-and-threshold-logic  ──► merged → Fixed .env secret bridging, per-metric alert thresholds, email wiring
+ ├── fix/healing-threshold-hardcoded-mismatch    ──► merged → Healing thresholds read from config instead of hardcoded literals, pkill exit-code handling
+ └── feat/sustained-breach-and-diagnostics       ──► merged → Consecutive-breach gating, dynamic CPU-culprit targeting, watchdog script
 ```
 
 **Branch naming convention:** `feat/<component-or-feature-name>` — lowercase, hyphen-separated, scoped to what the branch actually builds.
@@ -87,6 +90,9 @@ Building one component per branch rather than committing everything to `main` di
 | `feat/docker-healthcheck` | Replaced import-only `HEALTHCHECK` with a log-freshness check (`find ... -mmin -2`) validating the monitoring loop is actually alive, not just that the module imports |
 | `feat/docker-documentation` | `docs/docker.md` — full Dockerfile/`docker-compose.yml` reference, multi-stage build breakdown, non-root user rationale, host `/proc`+`/` bind-mount design for `HOST_PROC_PATH`/`HOST_ROOT_PATH`, graceful SIGTERM shutdown flow, and the documented Docker Desktop (WSL2) network-metrics limitation with root cause and workaround plan |
 | `feat/pytest-suite` | `tests/conftest.py` with `patch_config` fixture; unit tests for `ConfigLoader`, `SystemMetrics`, `NetworkMetrics`, all three alert senders, and `HealingActions`; integration tests for `MonitoringEngine.run_cycle()`; `pytest.ini` with coverage reporting |
+| `fix/alerting-config-secrets-and-threshold-logic` | Bridged `.env` telegram/slack/email credentials into the config tree; fixed `_send_alert()` comparing a nonexistent `system_health` key instead of real per-metric values; wired `EmailAlertSender` into the dispatch path (previously unused) |
+| `fix/healing-threshold-hardcoded-mismatch` | `_trigger_healing()` now reads thresholds via `config.get_threshold()` instead of hardcoded `>90`/`>95`/`>400` literals; `kill_process()` treats `pkill` exit code 1 ("no match") as success instead of a retry-triggering failure |
+| `feat/sustained-breach-and-diagnostics` | Consecutive-breach streak counter gating alerts/healing (`auto_healing.consecutive_breaches_required`); `SystemMetrics.get_top_cpu_process()` for dynamic restart targeting; `scripts/watchdog.sh` for independent crash detection; per-metric isolated healing execution |
 
 ---
 
@@ -194,6 +200,8 @@ touch scripts/restart_redis.sh
 ---
 
 ## Code Quality Standards
+
+`black` and `isort` are pinned to `line-length=120` (matching the Lint & Format CI job) via `pyproject.toml` at the repo root - run `black app/` and `isort app/` with no extra flags and they'll pick this up automatically.
 
 These standards apply to every file in `app/`:
 
