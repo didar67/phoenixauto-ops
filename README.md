@@ -32,6 +32,7 @@ Designed as a portfolio-grade DevOps project demonstrating: modular Python archi
 - ⏰ **Autonomous scheduling** — cron-based execution via idempotent `cron/setup_cron.sh`
 - 🐳 **Containerized** — multi-stage Docker build, non-root runtime, host-level system monitoring via read-only `/proc` and host filesystem mounts
 - 🎯 **Sustained-breach gating** — alerts and healing only fire after a metric breaches its threshold for several consecutive cycles, avoiding false triggers on transient spikes
+- 🔍 **Dynamic CPU-culprit targeting** — identifies the actual highest-CPU process at breach time instead of restarting a fixed service name
 - 🐕 **Watchdog** — an independent cron-based check detects if the engine itself has crashed or stopped logging
 
 ---
@@ -122,22 +123,23 @@ Key thresholds (`config/thresholds.yaml`):
 
 ```yaml
 thresholds:
-  cpu_usage_percent: 80.0       # Alert/Heal if CPU > this value
-  memory_usage_percent: 85.0    # Alert/Heal if RAM > this value
-  disk_usage_percent: 90.0      # Alert/Heal if Disk (/) > this value
-  load_average_limit: 4.0       # 1-minute load average 
+  cpu_usage_percent: 80.0             # Alert/Heal if CPU > this value
+  memory_usage_percent: 85.0          # Alert/Heal if RAM > this value
+  disk_usage_percent: 90.0            # Alert/Heal if Disk (/) > this value
+  load_average_limit: 4.0             # 1-minute load average 
 
 # Network related thresholds
 network:
-  max_connections: 500          # Active TCP connections
-  latency_ms: 200               # Round-trip latency in ms
+  max_connections: 500                # Active TCP connections
+  latency_ms: 200                     # Round-trip latency in ms
 
 # Self-Healing behavior
 auto_healing:
   enabled: true
-  dry_run: false                # If true, actions will be logged but not executed
-  max_retry_attempts: 3         # How many times to retry an action before giving up
-  cooldown_seconds: 300         # Wait time between healing attempts (5 min)
+  dry_run: false                      # If true, actions will be logged but not executed
+  max_retry_attempts: 3               # How many times to retry an action before giving up
+  cooldown_seconds: 300               # Wait time between healing attempts (5 min)
+  consecutive_breaches_required: 3    # Cycles a metric must stay in breach before acting
 ```
 
 Full configuration reference → **[docs/configuration.md](docs/configuration.md)**
@@ -171,7 +173,7 @@ pytest --cov=app --cov-report=term-missing
 |-------|--------|-------|
 | **Phase 1** — Core System | ✅ Complete | Python monitoring + alerting + healing + cron |
 | **Phase 2** — Docker | ✅ Complete | Multi-stage build, non-root container, host-level monitoring, health checks, OCI metadata |
-| **Phase 2.5** — Reliability Hardening | ✅ Complete | Sustained-breach gating, dynamic CPU-culprit targeting, self-crash watchdog |
+| **Phase 2.5** — Reliability Hardening | ✅ Complete | Sustained-breach gating, dynamic CPU-culprit targeting, self-crash watchdog, config-secret bridging fix |
 | **Phase 3** — Testing + CI + Security | ✅ Complete | pytest suite (48 tests, 80% coverage), GitHub Actions lint/format/test, Bandit + pip-audit dependency scanning, Docker build/runtime validation, Trivy image scanning with CRITICAL severity gate |
 | **Phase 4** — CD + AWS | 🔜 Planned | GHCR image publishing, ECS Fargate, Secrets Manager, Terraform IaC |
 
