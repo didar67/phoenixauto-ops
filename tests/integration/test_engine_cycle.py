@@ -88,6 +88,22 @@ class TestRunCycle:
         engine.run_cycle()  # streak 2/2 -> alert fires
         engine.telegram_alert.send_alert.assert_called_once_with("cpu_usage_percent", 92.0, 80.0, "critical")
 
+    def test_alert_does_not_fire_before_required_streak_with_required_three(self, engine, monkeypatch):
+        monkeypatch.setattr("app.engine.config.get_threshold", lambda metric_key, default=None: 80.0)
+        monkeypatch.setattr(
+            "app.engine.config.get",
+            lambda key, default=None: 3 if key == "auto_healing.consecutive_breaches_required" else default,
+        )
+        engine.system_metrics.collect.return_value = {"cpu_usage_percent": 92.0}
+        engine.network_metrics.collect.return_value = {"network_connections": 10}
+
+        engine.run_cycle()  # streak 1/3
+        engine.run_cycle()  # streak 2/3 - bug would fire here
+        engine.telegram_alert.send_alert.assert_not_called()
+
+        engine.run_cycle()  # streak 3/3 - should fire now
+        engine.telegram_alert.send_alert.assert_called_once_with("cpu_usage_percent", 92.0, 80.0, "critical")
+
     def test_a_collector_exception_does_not_crash_the_cycle(self, engine):
         # engine.py wraps run_cycle() in try/except - one bad cycle should
         # be logged and skipped, not take run_forever() down (the
