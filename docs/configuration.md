@@ -48,7 +48,6 @@ PhoenixAuto-Ops uses a two-layer configuration system: a YAML file for operation
 | `auto_healing.dry_run` | `false` | bool | When `true`, logs intended actions without executing shell scripts |
 | `auto_healing.max_retry_attempts` | `3` | int | How many times a failed healing action is retried before giving up |
 | `auto_healing.cooldown_seconds` | `300` | int | Minimum seconds between repeated healing for the same trigger type |
-| `auto_healing.cooldown_seconds` | `300` | int | Minimum seconds between repeated healing for the same trigger type |
 | `auto_healing.consecutive_breaches_required` | `3` | int | Number of consecutive monitoring cycles a metric must stay in breach before an alert or healing action fires - prevents a single transient spike from triggering a restart |
 
 ### Threshold Tuning Guide
@@ -129,12 +128,18 @@ Full explanation of why these are needed and how the mounts work → **[docs/doc
 
 The loader:
 
-- Loads thresholds from YAML
-- Loads secrets from .env
-- Merges both sources
-- Returns a unified configuration dictionary
+- Loads thresholds from YAML into `self._config`
+- Loads `.env` into `os.environ` via `python-dotenv`
+- Bridges telegram/slack/email credentials from `os.environ` into the same
+  `self._config` dict under `telegram.*`, `slack.*`, `email.*` keys
+  (`_load_secrets_from_env()`) - thresholds.yaml itself never holds
+  secrets, so without this bridge `config.get("slack.webhook_url")`
+  would always return `None` regardless of what's in `.env`
+- Returns a unified configuration dictionary from `get_all()`
 
-Components access credentials via `config.get('telegram.bot_token')` — no direct `os.environ` calls outside `config_loader.py`. This keeps secret access centralized and makes unit testing straightforward in the future (pass a mock config dict).
+Components access credentials via `config.get('telegram.bot_token')` — no direct `os.environ` calls outside `config_loader.py`. This keeps secret access centralized and makes unit testing straightforward (pass a mock config dict).
+
+**Testing note:** because `_load_secrets_from_env()` reads `os.environ` directly, and the `config` singleton loads the real `.env` once at import time, any test asserting an "empty config" against an isolated `tmp_path` must clear the relevant env vars first (`monkeypatch.delenv(...)`) — otherwise leftover real credentials from the actual `.env` leak into the assertion.
 
 ---
 
