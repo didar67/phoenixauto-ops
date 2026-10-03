@@ -110,6 +110,7 @@ auto_healing:
   dry_run: false                # If true, actions will be logged but not executed
   max_retry_attempts: 3         # How many times to retry an action before giving up
   cooldown_seconds: 300         # Wait time between healing attempts (5 min)
+  consecutive_breaches_required: 3  # Cycles a metric must stay in breach before acting
 ```
 
 **Recommended starting point:** keep `dry_run: true` until you verify the logs and confirm expected healing behavior.
@@ -149,6 +150,13 @@ Set correct permissions on the sudoers file:
 sudo chmod 440 /etc/sudoers.d/phoenixautoops
 ```
 
+**Note:** `cleanup.sh` (used by the `clear_cache` healing action) also calls `sudo apt-get clean` and `sudo tee /proc/sys/vm/drop_caches` internally - add these to the same sudoers file if memory-based healing is enabled:
+
+```bash
+youruser ALL=(ALL) NOPASSWD: /usr/bin/apt-get clean
+youruser ALL=(ALL) NOPASSWD: /usr/bin/tee /proc/sys/vm/drop_caches
+```
+
 > **Principle of least privilege:** these rules allow only the specific commands PhoenixAuto-Ops needs. Never use `NOPASSWD: ALL` for a monitoring process.
 
 ---
@@ -179,6 +187,21 @@ The default interval is every 5 minutes. To change it, edit `CRON_SCHEDULE` in `
 # Default is every 5 minutes; change only if you want a different interval.
 CRON_SCHEDULE="*/5 * * * *"   # Every 5 minutes
 ```
+
+---
+
+## Step 6.5 — Set Up the Watchdog (Optional but Recommended)
+
+`scripts/watchdog.sh` detects if the main engine itself has crashed - it's independent of `app/main.py` and runs on its own cron schedule:
+
+```bash
+chmod +x scripts/watchdog.sh
+crontab -e
+```
+
+Add: */5 * * * * /path/to/phoenixauto-ops/scripts/watchdog.sh
+
+It reads `SLACK_WEBHOOK_URL` from `.env` directly and alerts if `logs/phoenixauto-ops.log` hasn't been written to in 5 minutes.
 
 ---
 
