@@ -78,8 +78,9 @@ phoenixauto-ops/
 ├── .env                            # Runtime secrets — git-ignored, NEVER commit
 ├── .env.example                    # Secret template — safe to commit, no real values
 ├── .gitignore
-├── requirements.txt
-├── pytest.ini                       # Test discovery config + coverage reporting (--cov-report=xml)
+├── requirements.txt                # Application dependencies & test suite packages (psutil, pyyaml, pytest)
+├── pyproject.toml                  # Pins black/isort to line-length=120 so local formatting matches CI
+├── pytest.ini                      # Test discovery config + coverage reporting (--cov-report=xml)
 ├── setup.sh                        # One-command bootstrap script
 └── README.md                       # Project overview, quick start, and entry points
 ```
@@ -103,9 +104,9 @@ Does not contain business logic — that all lives in `engine.py`.
 The brain of PhoenixAuto-Ops. `MonitoringEngine` drives a single execution cycle:
 
 1. Collect metric snapshot from all enabled monitors
-2. Evaluate each metric against its configured threshold
-3. Dispatch alerts through all enabled channels for breached metrics
-4. Trigger healing actions for breaches that have healing configured
+2. Track each metric's consecutive-breach streak against its configured threshold - a single transient spike doesn't act; only a breach sustained for `auto_healing.consecutive_breaches_required` consecutive cycles does
+3. Dispatch alerts through all three channels (Telegram, Slack, Email) for metrics that just reached sustained breach
+4. Trigger healing for those same metrics - CPU healing identifies the actual top-CPU process (`SystemMetrics.get_top_cpu_process()`) rather than assuming a fixed service name; each metric's healing action runs in its own isolated try/except so one failing action doesn't block the others
 
 Keeps the orchestration logic thin and delegates all implementation details to the respective layers. Each layer is instantiated fresh per run — no stale state carries between cron invocations.
 
@@ -165,6 +166,8 @@ Credentials are read from the config dict (sourced from `.env`), never hardcoded
 2. Calls `python-dotenv`'s `load_dotenv()` to populate `os.environ` from `.env`
 3. Merges environment variables into the config dict under a `secrets` key
 4. Returns the unified dict — callers never need to touch `os.environ` directly
+
+Also bridges `telegram.*`/`slack.*`/`email.*` credentials from `os.environ` (populated by `.env`) into the same config tree `get()` reads from - see [docs/configuration.md](configuration.md) for why this bridge exists.
 
 ### `app/utils/logger.py`
 
