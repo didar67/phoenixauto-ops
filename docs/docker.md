@@ -60,9 +60,19 @@ Docker packages the same `MonitoringEngine` cycle described in [docs/architectur
 
 Splitting the build this way keeps `gcc` and its transitive `apt` dependencies out of the image that actually runs in production, which matters for both image size and attack surface.
 
+### Base Image Hardening
+
+```dockerfile
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ...
+```
+
+`apt-get upgrade -y` runs before package install specifically to pull patched versions of whatever the base `python:3.11-slim` image shipped with known CVEs at build time (e.g. `perl-base`, unused by this app but present in the base image and previously failing the Trivy CRITICAL-severity scan in CI).
+
 ### Non-Root Runtime User
 
 The container runs as `phoenixops` (uid 1000), not root. Earlier iterations of the Dockerfile granted this user passwordless `sudo` access to `systemctl` so `HealingActions.restart_service()` (see [docs/architecture.md](architecture.md#apphealing--remediation-layer)) could reach host services — this was removed. A container has no `systemd` process (PID 1 is the Python engine itself), so `sudo systemctl restart <service>` fails structurally regardless of permissions; keeping the sudoers grant would have been a real privilege-escalation surface for a command that could never actually succeed. See **Known Limitations** below for what this means for the healing layer specifically.
+
+This applies regardless of the restart target's name - `HealingActions.restart_service()` now receives a dynamically identified top-CPU process name (via `SystemMetrics.get_top_cpu_process()`) rather than a fixed string, but the failure mode is identical: no systemd/PID 1 init inside the container means `systemctl restart <any-name>` fails structurally.
 
 ### Entrypoint
 
@@ -195,6 +205,8 @@ WARNING | Failed to get bytes sent: [Errno 2] No such file or directory: '/host/
 WARNING | Failed to get bytes received: [Errno 2] No such file or directory: '/host/proc/net/dev'
 WARNING | Failed to get connections: [Errno 2] No such file or directory: '/host/proc/net/tcp'
 ```
+
+**Confirmed via live testing** (see project history): a full monitor → alert → heal cycle run under `docker compose up` on Docker Desktop/WSL2 showed `network_connections` permanently read as `0` (the `_safe_execute()` fallback), so a configured `network.max_connections` breach that fired correctly on native WSL (outside Docker) never triggered on the same thresholds inside the container - exactly as this limitation predicts. CPU, memory, disk, and load-average based alerting and healing (`clear_cache`) were unaffected and verified working inside the container.
 
 **Root cause:** Docker Desktop's WSL2 backend runs the Docker daemon inside a separate, hidden lightweight VM (`docker-desktop` distro), not the user's own WSL distro. The `/proc:/host/proc:ro` bind mount attaches to that VM's `/proc`. Static, snapshot-style files (`/proc/stat`, `/proc/meminfo`) relay through Docker Desktop's file-sharing layer correctly, but dynamically-generated `seq_file` entries like `/proc/net/dev` and `/proc/net/tcp` require direct kernel procfs access that the virtio-fs/gRPC-FUSE sharing layer does not forward.
 
