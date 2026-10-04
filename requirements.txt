@@ -5,4 +5,3 @@ python-dotenv==1.2.2
 pytest==8.0.0
 pytest-cov==4.0.0
 pytest-mock==3.10.0
-bandit[sarif]==1.9.3
