@@ -37,10 +37,12 @@ This document covers the internal design of PhoenixAuto-Ops: component responsib
 │   ┌──────────────────────────────────────────────────────────────┐  │   │
 │   │  app/utils/                                                  │  │   │
 │   │  config_loader.py ← config/thresholds.yaml + .env           │  │   │
-│   │  logger.py        → logs/phoenixauto_ops.log                 │◀─┘   │
+│   │  logger.py        → logs/phoenixauto-ops.log                 │◀─┘   │
 │   └──────────────────────────────────────────────────────────────┘      │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
+
+`scripts/watchdog.sh` runs entirely outside this diagram's boundary — it's invoked by its own independent cron entry, not by `MonitoringEngine`, specifically so it can still detect and alert on a crash of the engine process itself (see [docs/structure.md](structure.md#scriptswatchdogsh)).
 
 ---
 
@@ -92,7 +94,7 @@ Implemented actions include service restart, cache cleanup, and log rotation. `k
 `app/utils/` contains shared infrastructure helpers.
 
 - `config_loader.py` loads `config/thresholds.yaml` and merges environment variables from `.env` into a single merged config dictionary.
-- `logger.py` configures console logging and a rotating JSON file logger at `logs/phoenixauto_ops.log`.
+- `logger.py` configures console logging and a rotating JSON file logger at `logs/phoenixauto-ops.log`, with log level read from the `LOG_LEVEL` environment variable.
 
 ---
 
