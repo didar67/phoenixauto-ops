@@ -245,6 +245,10 @@ Defines the `phoenixops` service: env vars (including `HOST_PROC_PATH`/`HOST_ROO
 
 Excludes `.env`, `config/secrets.yaml`, `venv/`, `tests/`, and `docs/` from the build context — mirrors the intent of `.gitignore` keeps secrets out even if a future `COPY . .` is added by mistake.
 
+### `.gitignore`
+
+Excludes Python artifacts (`__pycache__/`, `venv/`), secrets (`.env`, `config/secrets.yaml`), rotated log files (`logs/*.log*`), and coverage artifacts (`coverage.xml`, `htmlcov/`). The blanket `*.txt` rule has an explicit `!requirements.txt` exception — without it, `requirements.txt` would be silently unaddable to git.
+
 ### `.env` / `.env.example`
 
 `.env` holds all secrets: API tokens, webhook URLs, SMTP passwords. It is listed in `.gitignore` and must never be committed. `.env.example` is the committed template — it contains all required variable names with placeholder values so contributors know what to populate.
