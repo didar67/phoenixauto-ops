@@ -12,7 +12,6 @@ env/
 config/secrets.yaml
 
 # --- Project Specific ---
-logs/*.log
 logs/*.log*
 !logs/.gitkeep
 
