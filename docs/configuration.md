@@ -49,6 +49,7 @@ PhoenixAuto-Ops uses a two-layer configuration system: a YAML file for operation
 | `auto_healing.max_retry_attempts` | `3` | int | How many times a failed healing action is retried before giving up |
 | `auto_healing.cooldown_seconds` | `300` | int | Minimum seconds between repeated healing for the same trigger type |
 | `auto_healing.consecutive_breaches_required` | `3` | int | Number of consecutive monitoring cycles a metric must stay in breach before an alert or healing action fires - prevents a single transient spike from triggering a restart |
+| `alerting.cooldown_minutes` | `15` | int | Minimum minutes between repeated alerts for the same metric. Not currently present in `thresholds.yaml` by default — falls back to this code default (`BaseAlertSender.__init__`); add an `alerting:` section to `thresholds.yaml` to override |
 
 ### Threshold Tuning Guide
 
@@ -85,8 +86,10 @@ SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T00000000/B00000000/xxxxxxxxx
 # ─── Email Alerting (SMTP/TLS) ────────────────────────────────────────────────
 # For Gmail: use an App Password, not your account password.
 # Generate at: https://myaccount.google.com/apppasswords
+# 465 required, not 587 - EmailAlertSender (app/alerting/email.py) uses
+# smtplib.SMTP_SSL, implicit TLS, port 465 only. STARTTLS/587 fails here.
 SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
+SMTP_PORT=465
 SMTP_USER=alerts@yourdomain.com
 SMTP_PASSWORD=your_app_password_here
 ALERT_EMAIL_RECIPIENTS=ops@yourdomain.com,oncall@yourdomain.com
@@ -100,7 +103,7 @@ ALERT_EMAIL_RECIPIENTS=ops@yourdomain.com,oncall@yourdomain.com
 | `TELEGRAM_CHAT_ID` | If using Telegram | Target chat or group ID (negative = group) |
 | `SLACK_WEBHOOK_URL` | If using Slack | Full Incoming Webhook URL from Slack App config |
 | `SMTP_HOST` | If using Email | SMTP server hostname |
-| `SMTP_PORT` | If using Email | Usually `587` (STARTTLS) or `465` (SSL) |
+| `SMTP_PORT` | If using Email | Must be `465` — the code uses `smtplib.SMTP_SSL` (implicit TLS); `587`/STARTTLS is not supported |
 | `SMTP_USER` | If using Email | Authenticated sender address |
 | `SMTP_PASSWORD` | If using Email | App password or SMTP relay credential |
 | `ALERT_EMAIL_RECIPIENTS` | If using Email | Comma-separated list of recipient addresses |
@@ -228,7 +231,7 @@ git commit -m "Remove accidentally tracked .env secrets file"
 
 ## Best Practices Summary
 
-- **Cooldown asymmetry:** Set `auto_healing.cooldown_seconds` higher than the alerting cooldown in `BaseAlertSender`. Alerting at 300s intervals is fine; triggering a service restart every 5 minutes on a flapping service is a remediation loop. Use 600s or higher for healing cooldowns on production.
+- **Cooldown asymmetry:** As shipped, `alerting.cooldown_minutes` defaults to 15 minutes (900s, code fallback) while `auto_healing.cooldown_seconds` defaults to 5 minutes (300s, set in `thresholds.yaml`) — healing can currently retry up to 3x more often than a fresh alert fires for the same metric. If that's not the intended behavior for a given deployment, either raise `auto_healing.cooldown_seconds` to 900+ or explicitly set a shorter `alerting.cooldown_minutes` in `thresholds.yaml` so the two stay aligned.
 
 - **Validate dry-run first:** Every time `thresholds.yaml` is changed on a production server, temporarily set `dry_run: true`, run one cycle, inspect `logs/phoenixauto_ops.log` to confirm which actions would have fired, then restore `dry_run: false`.
 

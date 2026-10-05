@@ -71,8 +71,11 @@ TELEGRAM_CHAT_ID=<your_chat_id>
 SLACK_WEBHOOK_URL=<your_slack_webhook_url>
 
 # ─── Email Alerting (SMTP/TLS) ────────────────────────────────────
+# 465 required, not 587 - EmailAlertSender uses smtplib.SMTP_SSL (implicit
+# TLS), which only speaks on port 465. Port 587/STARTTLS will fail with
+# "SSL: WRONG_VERSION_NUMBER".
 SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
+SMTP_PORT=465
 SMTP_USER=<your_email_address>
 SMTP_PASSWORD=<your_app_password>
 ALERT_EMAIL_RECIPIENTS=<your_email1>,<your_email2>
@@ -225,7 +228,7 @@ Expected console output:
 **Watch live JSON logs:**
 
 ```bash
-tail -f logs/phoenixauto_ops.log
+tail -f logs/phoenixauto-ops.log
 ```
 
 **Test via the production wrapper:**
@@ -270,7 +273,7 @@ sudo: /bin/systemctl: command not found
 which systemctl
 ```
 
-Update the path in `/etc/sudoers.d/phoenixauto-ops` to match. Re-run `sudo visudo -c -f /etc/sudoers.d/phoenixauto-ops` to validate.
+Update the path in `/etc/sudoers.d/phoenixautoops` to match. Re-run `sudo visudo -c -f /etc/sudoers.d/phoenixautoops` to validate.
 
 ### `ModuleNotFoundError: No module named 'psutil'`
 

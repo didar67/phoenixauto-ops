@@ -9,8 +9,10 @@ This document explains every folder and file in the repository: what it does, wh
 ```
 phoenixauto-ops/
 │
+├── .github/
+│   └── workflows/                  # ci.yml (app CI), docker-ci.yml (Docker CI) — see docs/ci.md
+│
 ├── app/                            # All Python application code
-│   ├── __init__.py
 │   ├── main.py                     # Entry point — loads config and starts MonitoringEngine
 │   ├── engine.py                   # Core orchestration: collect → evaluate → alert → heal
 │   │
@@ -68,7 +70,7 @@ phoenixauto-ops/
 │   ├── structure.md                # This file — folder and file explanations
 │   ├── setup.md                    # Full installation guide
 │   ├── configuration.md            # thresholds.yaml and .env complete reference
-│   └── development-workflow.md     # Git branching strategy, code standards, and roadmap
+│   ├── development-workflow.md     # Git branching strategy, code standards, and roadmap
 │   └── docker.md                   # Dockerfile, docker-compose.yml, host monitoring, known limitations
 ├── Dockerfile                      # Multi-stage build: builder (gcc/psutil compile) → runtime (non-root)
 ├── docker-compose.yml              # phoenixops service: env, volumes, host-monitoring mounts, healthcheck
@@ -150,14 +152,14 @@ Credentials are read from the config dict (sourced from `.env`), never hardcoded
 ### `app/healing/base.py`
 
 `BaseHealer` wraps all healing execution with:
-- **Dry-run check** — if `config.auto_healing.dry_run` is true, log and return without executing
-- **Retry loop** — calls `_execute()` up to `max_retry_attempts`, sleeps between attempts
-- **Cooldown check** — won't re-execute the same action within `cooldown_seconds`
-- **Result logging** — logs success/failure with action name, attempt number, and exit code
+- **Dry-run check** — if `config.auto_healing.dry_run` is true, logs the intended action and returns without executing
+- **Retry loop** — calls the action function up to `max_retry_attempts` times via `_safe_execute()`, with a 2-second delay between attempts
+- **Cooldown check** — `_is_cooldown_over()` blocks re-running the same action *type* (`restart_service`, `clear_cache`, `kill_process`) within `cooldown_seconds`, even across different dynamic targets (e.g. a different top-CPU process name each cycle)
+- **Result logging** — logs success, skip-due-to-cooldown, or exhausted-retry failure for every action
 
 ### `app/healing/actions.py`
 
-`HealingActions` maps breach types (strings like `"high_cpu"`, `"service_down"`) to shell scripts in `scripts/`. Uses `subprocess.run()` with a `timeout` and captures both `stdout` and `stderr` for logging. All script paths are module-level constants — no dynamic string construction that could introduce injection risk.
+`HealingActions` exposes four explicit methods — `restart_service()`, `kill_process()`, `clear_cache()`, `log_rotate()` — each wrapping either a shell script (`service_manager.sh`, `cleanup.sh`) or a direct system command (`pkill`), executed via `subprocess.run()` with a `timeout` and both `stdout`/`stderr` captured for logging. Script filenames are hardcoded literals inside each method, never built from dynamic or user-controlled input, so there's no path-injection risk even though the restart target name and `scripts_dir` path are resolved at runtime. `kill_process()` treats `pkill` exit code 1 ("no match") as success, not a failure.
 
 ### `app/utils/config_loader.py`
 
@@ -171,9 +173,10 @@ Also bridges `telegram.*`/`slack.*`/`email.*` credentials from `os.environ` (pop
 
 ### `app/utils/logger.py`
 
-`setup_logger(name)` configures:
+`StructuredLogger` (a singleton) configures:
 - A `StreamHandler` with a human-readable formatter for console output
-- A `RotatingFileHandler` writing with daily rotation JSON to `logs/phoenixauto_ops.log` (7 backups)
+- A `TimedRotatingFileHandler` writing daily-rotated JSON to `logs/phoenixauto-ops.log` (7 backups)
+- Log level read from the `LOG_LEVEL` environment variable (defaults to `INFO`)
 
 The JSON formatter adds `timestamp`, `level`, `component`, and `message` keys to every record. Any `extra={}` dict passed to a log call is merged into the JSON object, enabling structured context like `{"metric": "cpu_percent", "value": 91.3}`.
 
@@ -206,6 +209,10 @@ Production-safe cron entry point:
 
 Runs independently of the main engine, via its own separate cron entry. Checks whether `logs/phoenixauto-ops.log` has been written to within the last 5 minutes; if not, sends a Slack alert since the engine process itself may have crashed or hung. This exists because the main engine has no way to detect or report its own failure - a crashed engine simply stops logging, silently.
 
+### `.github/workflows/ci.yml` and `.github/workflows/docker-ci.yml`
+
+GitHub Actions pipelines validating every change before merge — lint/format, the full pytest suite, Bandit/pip-audit security scanning, and (for Docker-relevant changes) a full image build, runtime/healthcheck/shutdown validation, and a Trivy CRITICAL-severity gate. Full breakdown → **[docs/ci.md](docs/ci.md)**.
+
 ### `cron/setup_cron.sh`
 
 Reads the current user's crontab, checks whether a PhoenixAuto-Ops entry already exists (grep on a comment marker), and adds the job only if absent. This makes it safe to re-run after updates without creating duplicate entries. Default schedule is `*/5 * * * *` — configurable by editing the script variable `CRON_SCHEDULE` before running.
@@ -224,7 +231,7 @@ Current state: 48 tests, 80% coverage (`pytest.ini` configured with `--cov-repor
 
 ### `pytest.ini`
 
-Test discovery and coverage config. `--cov-report=xml` generates `coverage.xml` on every run — not committed to git (see `.gitignore`), but this is the artifact the CI pipeline's test stage will pick up and, later, feed to a coverage badge.
+Test discovery and coverage config. `--cov-report=xml` generates `coverage.xml` on every run — not committed to git (see `.gitignore`), and this is the artifact `ci.yml`'s Test Suite job already uploads as a workflow artifact (see [docs/ci.md](docs/ci.md)); it could later feed an external coverage badge/service.
 
 ### `Dockerfile`
 
@@ -237,6 +244,10 @@ Defines the `phoenixops` service: env vars (including `HOST_PROC_PATH`/`HOST_ROO
 ### `.dockerignore`
 
 Excludes `.env`, `config/secrets.yaml`, `venv/`, `tests/`, and `docs/` from the build context — mirrors the intent of `.gitignore` keeps secrets out even if a future `COPY . .` is added by mistake.
+
+### `.gitignore`
+
+Excludes Python artifacts (`__pycache__/`, `venv/`), secrets (`.env`, `config/secrets.yaml`), rotated log files (`logs/*.log*`), and coverage artifacts (`coverage.xml`, `htmlcov/`). The blanket `*.txt` rule has an explicit `!requirements.txt` exception — without it, `requirements.txt` would be silently unaddable to git.
 
 ### `.env` / `.env.example`
 

@@ -32,7 +32,14 @@ class HealingActions(BaseHealer):
     def restart_service(self, service_name: str) -> bool:
         """Restart a systemd service using shell script."""
         script = self.scripts_dir / "service_manager.sh"
-        return self._safe_execute(f"restart {service_name}", self._run_shell_script, script, "restart", service_name)
+        return self._safe_execute(
+            f"restart {service_name}",
+            self._run_shell_script,
+            script,
+            "restart",
+            service_name,
+            cooldown_key="restart_service",
+        )
 
     def kill_process(self, process_name: str) -> bool:
         """Kill processes matching process_name via pkill (SIGTERM)."""
@@ -40,17 +47,18 @@ class HealingActions(BaseHealer):
             f"kill {process_name}",
             self._run_pkill,
             process_name,
+            cooldown_key="kill_process",
         )
 
     def clear_cache(self) -> bool:
         """Clear system page cache using cleanup script."""
         script = self.scripts_dir / "cleanup.sh"
-        return self._safe_execute("clear_cache", self._run_shell_script, script)
+        return self._safe_execute("clear_cache", self._run_shell_script, script, cooldown_key="clear_cache")
 
     def log_rotate(self) -> bool:
         """Force log rotation using cleanup script."""
         script = self.scripts_dir / "cleanup.sh"
-        return self._safe_execute("log_rotate", self._run_shell_script, script)
+        return self._safe_execute("log_rotate", self._run_shell_script, script, cooldown_key="log_rotate")
 
     def _run_shell_script(self, script_path: Path, *args: str) -> bool:
         """Run shell script with proper error handling and timeout."""

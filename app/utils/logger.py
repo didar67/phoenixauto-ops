@@ -8,7 +8,7 @@ Features:
 - Rotating file logs (daily rotation, 7 days retention)
 - JSON structured format for file logs (easy to parse by tools)
 - Singleton pattern to prevent duplicate handlers
-- Automatic integration with ConfigLoader for log level
+- Reads LOG_LEVEL from the environment for log level
 - Supports extra contextual data (structured logging)
 - Robust error handling with fallbacks
 
@@ -20,6 +20,7 @@ Usage:
 
 import json
 import logging
+import os
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -65,7 +66,7 @@ class StructuredLogger:
     """Singleton structured logger for PhoenixAuto-Ops.
 
     Ensures only one logger instance exists.
-    Loads log level from config with fallback.
+    Loads log level from the environment with fallback.
     Handles setup errors gracefully.
     """
 
@@ -82,15 +83,20 @@ class StructuredLogger:
         """Configure console and rotating file handlers with error handling."""
         self.logger = logging.getLogger("phoenixauto_ops")
 
-        import os
-
-        # Load log level from config with fallback
+        # Reads LOG_LEVEL straight from the environment (e.g.
+        # docker-compose.yml's `environment: LOG_LEVEL: INFO`) rather than
+        # importing app.utils.config_loader.config - config_loader.py
+        # itself imports this module's `logger`, so importing config back
+        # here would create a circular import. Previously this read a
+        # dotted "logging.level" key via os.getenv(), which can never
+        # match a real environment variable name and always silently fell
+        # through to the INFO default regardless of what was configured.
         try:
-            log_level_str = os.getenv("logging.level", "INFO").upper()
+            log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
             self.logger.setLevel(getattr(logging, log_level_str, logging.INFO))
         except Exception as e:
             self.logger.setLevel(logging.INFO)
-            print(f"Warning: Failed to load log level from config: {e}. Using INFO.")
+            print(f"Warning: Failed to load log level from environment: {e}. Using INFO.")
 
         self.logger.propagate = False  # Prevent duplicate propagation
 
@@ -129,23 +135,23 @@ class StructuredLogger:
 
     def debug(self, message: str, **extra: Any) -> None:
         """Log debug level message with optional structured data."""
-        self.logger.debug(message, extra=extra)
+        self.logger.debug(message, extra=extra, stacklevel=2)
 
     def info(self, message: str, **extra: Any) -> None:
         """Log info level message with optional structured data."""
-        self.logger.info(message, extra=extra)
+        self.logger.info(message, extra=extra, stacklevel=2)
 
     def warning(self, message: str, **extra: Any) -> None:
         """Log warning level message with optional structured data."""
-        self.logger.warning(message, extra=extra)
+        self.logger.warning(message, extra=extra, stacklevel=2)
 
     def error(self, message: str, **extra: Any) -> None:
         """Log error level message with optional structured data."""
-        self.logger.error(message, extra=extra)
+        self.logger.error(message, extra=extra, stacklevel=2)
 
     def critical(self, message: str, **extra: Any) -> None:
         """Log critical level message with optional structured data."""
-        self.logger.critical(message, extra=extra)
+        self.logger.critical(message, extra=extra, stacklevel=2)
 
 
 # Singleton instance - import and use directly

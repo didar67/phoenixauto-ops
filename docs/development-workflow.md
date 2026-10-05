@@ -29,17 +29,20 @@ main
  ├── feat/project-installer      ──► merged → Automated one-command setup script setup.sh
  ├── feat/env-files              ──► merged → Secure configuration template .env.example
  ├── feat/documentation-core     ──► merged → README.md, architecture.md, structure.md
- ├──feat/documentation-guides   ──► merged → setup.md, configuration.md, development-workflow.md
+ ├── feat/documentation-guides   ──► merged → setup.md, configuration.md, development-workflow.md
  ├── feature/dockerization       ──► merged → Multi-stage Dockerfile, Docker Compose, containerized runtime
  ├── feat/docker-security        ──► merged → Non-root user, removed sudo/sudoers dependency
  ├── feat/docker-runtime         ──► merged → Graceful SIGTERM shutdown, double-collect fix, OCI metadata
  ├── feat/docker-host-monitoring ──► merged → Host /proc & rootfs mounts, PROCFS_PATH support
  ├── feat/docker-healthcheck     ──► merged → Log-based liveness HEALTHCHECK
  ├── feat/docker-documentation   ──► merged → docs/docker.md (Dockerfile/compose reference, host-monitoring design, WSL2 limitation)
- └── feat/pytest-suite           ──► merged → 48-case pytest suite (unit + integration), 80% coverage
-  ├── fix/alerting-config-secrets-and-threshold-logic  ──► merged → Fixed .env secret bridging, per-metric alert thresholds, email wiring
+ ├── feat/pytest-suite           ──► merged → 48-case pytest suite (unit + integration), 80% coverage
+ ├── feat/ci-lint-test           ──► merged → GitHub Actions lint (flake8/black) + pytest execution against tests/ (ci.yml)
+ ├── feat/ci-docker-trivy        ──► merged → Docker build/runtime validation + Trivy CRITICAL-severity gate (docker-ci.yml)
+ ├── fix/alerting-config-secrets-and-threshold-logic  ──► merged → Fixed .env secret bridging, per-metric alert thresholds, email wiring
  ├── fix/healing-threshold-hardcoded-mismatch    ──► merged → Healing thresholds read from config instead of hardcoded literals, pkill exit-code handling
- └── feat/sustained-breach-and-diagnostics       ──► merged → Consecutive-breach gating, dynamic CPU-culprit targeting, watchdog script
+ ├── feat/sustained-breach-and-diagnostics       ──► merged → Consecutive-breach gating, dynamic CPU-culprit targeting, watchdog script
+ └── chore/project-closure-audit-fixes           ──► merged → Healing cooldown fix, logger LOG_LEVEL fix, full doc/code audit sync
 ```
 
 **Branch naming convention:** `feat/<component-or-feature-name>` — lowercase, hyphen-separated, scoped to what the branch actually builds.
@@ -93,6 +96,7 @@ Building one component per branch rather than committing everything to `main` di
 | `fix/alerting-config-secrets-and-threshold-logic` | Bridged `.env` telegram/slack/email credentials into the config tree; fixed `_send_alert()` comparing a nonexistent `system_health` key instead of real per-metric values; wired `EmailAlertSender` into the dispatch path (previously unused) |
 | `fix/healing-threshold-hardcoded-mismatch` | `_trigger_healing()` now reads thresholds via `config.get_threshold()` instead of hardcoded `>90`/`>95`/`>400` literals; `kill_process()` treats `pkill` exit code 1 ("no match") as success instead of a retry-triggering failure |
 | `feat/sustained-breach-and-diagnostics` | Consecutive-breach streak counter gating alerts/healing (`auto_healing.consecutive_breaches_required`); `SystemMetrics.get_top_cpu_process()` for dynamic restart targeting; `scripts/watchdog.sh` for independent crash detection; per-metric isolated healing execution |
+| `chore/project-closure-audit-fixes` | Implemented the previously-documented-but-missing per-action-type healing cooldown (`auto_healing.cooldown_seconds`); fixed `LOG_LEVEL` never actually being read from the environment; removed a redundant/conflicting `bandit` pin from `requirements.txt`; corrected several stale doc references (log filename, SMTP port example, sudoers filename, CI branch history) across README and docs/ |
 
 ---
 
@@ -263,8 +267,6 @@ Actual branch names may differ when implemented — these are placeholders to sh
 
 | Branch | Planned Work |
 |--------|--------------|
-| `feat/ci-lint-test` | GitHub Actions: lint (flake8/black) + pytest execution against the existing `tests/` suite |
-| `feat/ci-docker-trivy` | Docker build validation + Trivy CRITICAL-severity scan gate |
 | `feat/aws-deployment` | ECS Fargate task definition, Terraform modules, Secrets Manager integration |
 
 ---

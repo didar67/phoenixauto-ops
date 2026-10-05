@@ -99,4 +99,77 @@ class TestCommandTimeout:
 
         with pytest.raises(subprocess.TimeoutExpired):
             healer.clear_cache()
-            
+
+
+class TestCooldown:
+    def test_second_call_within_cooldown_is_skipped(self, patch_config, mocker):
+        patch_config(
+            get_values={
+                "auto_healing.enabled": True,
+                "auto_healing.max_retry_attempts": 3,
+                "auto_healing.dry_run": False,
+                "auto_healing.cooldown_seconds": 300,
+            }
+        )
+        healer = HealingActions()
+        mock_run = mocker.patch(
+            "app.healing.actions.subprocess.run",
+            return_value=mocker.Mock(returncode=0, stdout="", stderr=""),
+        )
+
+        first = healer.clear_cache()
+        mock_run.reset_mock()
+        second = healer.clear_cache()
+
+        assert first is True
+        assert second is False
+        mock_run.assert_not_called()
+
+    def test_different_action_types_have_independent_cooldowns(self, patch_config, mocker):
+        patch_config(
+            get_values={
+                "auto_healing.enabled": True,
+                "auto_healing.max_retry_attempts": 3,
+                "auto_healing.dry_run": False,
+                "auto_healing.cooldown_seconds": 300,
+            }
+        )
+        healer = HealingActions()
+        mocker.patch(
+            "app.healing.actions.subprocess.run",
+            return_value=mocker.Mock(returncode=0, stdout="", stderr=""),
+        )
+
+        healer.clear_cache()
+        # A different action type (restart_service) must not be blocked
+        # by clear_cache's cooldown - they're keyed independently.
+        result = healer.restart_service("nginx")
+
+        assert result is True
+
+    def test_restart_service_cooldown_applies_across_different_target_names(self, patch_config, mocker):
+        # restart_service's cooldown is keyed by action TYPE
+        # ("restart_service"), not by the dynamic target name - otherwise
+        # a different top-CPU-process name each cycle (see
+        # SystemMetrics.get_top_cpu_process()) would bypass the cooldown
+        # entirely every time the culprit process changes.
+        patch_config(
+            get_values={
+                "auto_healing.enabled": True,
+                "auto_healing.max_retry_attempts": 3,
+                "auto_healing.dry_run": False,
+                "auto_healing.cooldown_seconds": 300,
+            }
+        )
+        healer = HealingActions()
+        mock_run = mocker.patch(
+            "app.healing.actions.subprocess.run",
+            return_value=mocker.Mock(returncode=0, stdout="", stderr=""),
+        )
+
+        healer.restart_service("stress-ng-cpu")
+        mock_run.reset_mock()
+        result = healer.restart_service("some-other-process")
+
+        assert result is False
+        mock_run.assert_not_called()
