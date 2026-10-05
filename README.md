@@ -23,10 +23,10 @@ Designed as a portfolio-grade DevOps project demonstrating: modular Python archi
 
 - 📊 **Real-time metrics** — CPU, memory, disk, load average, network TX/RX via `psutil`
 - 🚨 **Multi-channel alerting** — Telegram, Slack, Email with per-channel cooldown enforcement
-- 🛠️ **Self-healing engine** — service restarts, cache flush, and old log cleanup via shell scripts with dry-run support
+- 🛠️ **Self-healing engine** — service restarts, cache flush, and old log cleanup via shell scripts, with dry-run support and a per-action-type cooldown to prevent healing loops
 - 🔁 **Dry-run & retry** — safely test healing logic before enabling it on production
-- 🗂️ **Structured logging** — JSON log output with rotation to `logs/phoenixauto_ops.log`
-- 🔐 **Automated CI security gates** — GitHub Actions runs lint, tests, Bandit static analysis, pip-audit dependency scanning, and Trivy image scanning on every pull request
+- 🗂️ **Structured logging** — JSON log output with rotation to `logs/phoenixauto-ops.log`
+- 🔐 **Automated CI security gates** — GitHub Actions runs lint, tests, Bandit static analysis, and pip-audit dependency scanning on every pull request, plus Dockerfile linting (hadolint) and Trivy image scanning whenever Docker-relevant files change
 - ⚙️ **Config-driven** — all thresholds and healing flags live in `config/thresholds.yaml`
 - 🔒 **Secrets management** — credentials in `.env`, never committed to version control
 - ⏰ **Autonomous scheduling** — cron-based execution via idempotent `cron/setup_cron.sh`
@@ -65,6 +65,7 @@ phoenixauto-ops/
 │   ├── engine.py           # Core monitor → alert → heal orchestration
 │   └── main.py             # Entry point
 ├── scripts/                # Bash: service_manager.sh, cleanup.sh, run_monitor.sh, watchdog.sh
+├── tests/                  # pytest suite (unit + integration), see docs/structure.md
 ├── cron/                   # setup_cron.sh — idempotent crontab installer
 ├── config/                 # Metric thresholds + healing config
 ├── logs/                   # Runtime JSON logs (git-ignored)
@@ -154,7 +155,7 @@ Full configuration reference → **[docs/configuration.md](docs/configuration.md
 python3 -m app.main
 
 # Watch structured JSON logs in real time
-tail -f logs/phoenixauto_ops.log | python3 -m json.tool
+tail -f logs/phoenixauto-ops.log | python3 -m json.tool
 
 # Run via production wrapper (handles venv)
 bash scripts/run_monitor.sh
