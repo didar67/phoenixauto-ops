@@ -23,6 +23,7 @@ logs/*.log*
 
 # Runtime / output files
 *.txt
+!requirements.txt
 *.log
 *.out
 output*
