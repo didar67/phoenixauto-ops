@@ -94,7 +94,7 @@ Coverage behavior (`--cov=app`, `--cov-report=term-missing`,
 `--cov-report=xml`) is configured once in the project's own `pytest.ini`
 rather than repeated on the CI command line — this keeps `pytest.ini` as
 the single source of truth for how coverage runs, whether invoked from CI
-or locally by `bash scripts/run_monitor.sh`-adjacent manual testing.
+or locally via `pytest`.
 Test failures are blocking; this job has no conditional pass-through for
 a failing test.
 
@@ -320,7 +320,7 @@ requiring careful trigger/permission separation to manage it.
 
 ### Accepted findings
 
-`pip-audit`'s CRITICAL-by-default policy has one explicit, documented
+`pip-audit` blocks on any known vulnerability; it has one explicit, documented
 exception: **PYSEC-2026-1845** (pytest, predictable `/tmp/pytest-of-{user}`
 directory naming) is ignored via `--ignore-vuln`. This is a test-only
 dependency, the exploit requires local multi-user access to a shared `/tmp`

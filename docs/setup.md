@@ -48,7 +48,7 @@ sudo ./setup.sh       # Use `sudo` because the script sets execute permissions a
 What it does:
 - Creates `venv/` with `python3 -m venv venv`
 - Activates the venv and installs all packages from `requirements.txt`
-- Sets execute permissions on all scripts in `scripts/` and `cron/`
+- Sets execute permissions on `scripts/*.sh` and installs the watchdog cron entry
 
 After it completes, your venv is ready and `.env` is waiting to be populated.
 
@@ -156,7 +156,7 @@ sudo chmod 440 /etc/sudoers.d/phoenixautoops
 **Note:** `cleanup.sh` (used by the `clear_cache` healing action) also calls `sudo apt-get clean` and `sudo tee /proc/sys/vm/drop_caches` internally - add these to the same sudoers file if memory-based healing is enabled:
 
 ```bash
-youruser ALL=(ALL) NOPASSWD: /usr/bin/apt-get clean
+youruser ALL=(ALL) NOPASSWD: /usr/bin/apt-get clean -y
 youruser ALL=(ALL) NOPASSWD: /usr/bin/tee /proc/sys/vm/drop_caches
 ```
 
@@ -164,9 +164,9 @@ youruser ALL=(ALL) NOPASSWD: /usr/bin/tee /proc/sys/vm/drop_caches
 
 ---
 
-## Step 6 — Set Up Cron Job
+## Step 6 — Run the Engine and Install the Watchdog Cron
 
-Install the crontab entry with the idempotent setup script:
+The engine is a long-running process (it loops every `cycle_interval_seconds`, default 60 s), so it must not be started from cron. Run it in the foreground (`python3 -m app.main`) or as a systemd service (Step 6.5). `cron/setup_cron.sh` installs only the independent watchdog (`scripts/watchdog.sh`, every 5 minutes):
 
 ```bash
 bash cron/setup_cron.sh
@@ -175,25 +175,51 @@ bash cron/setup_cron.sh
 Verify the entry was added:
 
 ```bash
-crontab -l | grep phoenixauto-ops
+crontab -l | grep watchdog.sh
 ```
 
 Expected output:
 
 ```
-*/5 * * * * /path/to/phoenixauto-ops/scripts/run_monitor.sh >> /path/to/logs/phoenixauto_ops.log 2>&1
+*/5 * * * * /path/to/phoenixauto-ops/scripts/watchdog.sh >> /path/to/phoenixauto-ops/logs/cron.log 2>&1
 ```
 
-The default interval is every 5 minutes. To change it, edit `CRON_SCHEDULE` in `cron/setup_cron.sh` before running:
+The default interval is every 5 minutes. To change it, edit the `CRON_JOB` line in `cron/setup_cron.sh` before running:
 
 ```bash
 # Default is every 5 minutes; change only if you want a different interval.
-CRON_SCHEDULE="*/5 * * * *"   # Every 5 minutes
+CRON_JOB="*/5 * * * * $WRAPPER_SCRIPT >> $LOG_DIR/cron.log 2>&1"
 ```
 
 ---
 
-## Step 6.5 — Set Up the Watchdog (Optional but Recommended)
+## Step 6.5 — (Optional) Run the Engine as a systemd Service
+
+```ini
+# /etc/systemd/system/phoenixauto-ops.service
+[Unit]
+Description=PhoenixAuto-Ops monitoring engine
+After=network-online.target
+
+[Service]
+User=youruser
+WorkingDirectory=/path/to/phoenixauto-ops
+ExecStart=/path/to/phoenixauto-ops/venv/bin/python -u -m app.main
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=40
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl enable --now phoenixauto-ops
+```
+
+---
+
+## Step 6.6 — Watchdog Details
 
 `scripts/watchdog.sh` detects if the main engine itself has crashed - it's independent of `app/main.py` and runs on its own cron schedule:
 
@@ -202,7 +228,7 @@ chmod +x scripts/watchdog.sh
 crontab -e
 ```
 
-Add: */5 * * * * /path/to/phoenixauto-ops/scripts/watchdog.sh
+(Already installed by `cron/setup_cron.sh` / `setup.sh`; add it manually only if you skipped Step 6: `*/5 * * * * /path/to/phoenixauto-ops/scripts/watchdog.sh`)
 
 It reads `SLACK_WEBHOOK_URL` from `.env` directly and alerts if `logs/phoenixauto-ops.log` hasn't been written to in 5 minutes.
 
@@ -210,7 +236,7 @@ It reads `SLACK_WEBHOOK_URL` from `.env` directly and alerts if `logs/phoenixaut
 
 ## Step 7 — Verify the Full Stack
 
-**Run a one-shot cycle manually:**
+**Start the engine in the foreground (Ctrl+C to stop):**
 
 ```bash
 source venv/bin/activate
@@ -220,9 +246,9 @@ python3 -m app.main
 Expected console output:
 
 ```
-2025-06-09 14:32:07 INFO  [engine] Starting monitoring cycle
-2025-06-09 14:32:07 INFO  [system_metrics] cpu=72.4% memory=68.1% disk[/]=76.0%
-2025-06-09 14:32:07 INFO  [engine] No thresholds breached — cycle complete
+2026-10-05 23:56:21 | INFO     | Starting monitoring cycle
+2026-10-05 23:56:22 | INFO     | System metrics collected
+2026-10-05 23:56:24 | INFO     | Monitoring cycle completed successfully
 ```
 
 **Watch live JSON logs:**
@@ -237,7 +263,7 @@ tail -f logs/phoenixauto-ops.log
 bash scripts/run_monitor.sh
 ```
 
-**Verify alerting works** by temporarily lowering a threshold in `thresholds.yaml` below your current value (e.g., set `cpu_usage_percent: 1.0`), running `python3 -m app.main`, then restoring the real threshold. You should receive an alert on your configured channel.
+**Verify alerting works** by temporarily lowering a threshold in `thresholds.yaml` below your current value (e.g., set `cpu_usage_percent: 1.0`), running `python3 -m app.main`, then restoring the real threshold. Because of sustained-breach gating, the alert arrives after `consecutive_breaches_required` consecutive cycles (default 3, about 3 minutes). Restart the engine after editing the YAML — config is read once at startup.
 
 ---
 
@@ -335,7 +361,7 @@ mkdir -p logs
 
 ```bash
 # Remove only the PhoenixAuto-Ops entry from crontab
-crontab -l | grep -v phoenixauto-ops | crontab -
+crontab -l | grep -v 'scripts/watchdog.sh' | crontab -
 crontab -l   # Confirm it's gone
 ```
 
