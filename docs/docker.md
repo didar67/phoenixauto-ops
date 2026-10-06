@@ -10,7 +10,7 @@ Docker packages the same `MonitoringEngine` cycle described in [docs/architectur
 
 - **Portability** — runs identically on any Docker-capable host without a Python/venv setup per machine
 - **Isolation** — the monitoring engine and its dependencies are sandboxed from the host's own Python environment
-- **Deployment path** — a prerequisite for Phase 3 (CI/CD + GHCR image push) and Phase 4 (AWS ECS Fargate) on the project roadmap
+- **Deployment path** — the packaging step used by CI (Phase 3, done) and by the planned Phase 4 deployment (GHCR image push, AWS)
 
 ---
 
@@ -107,7 +107,7 @@ LABEL org.opencontainers.image.title="PhoenixAuto-Ops" \
       org.opencontainers.image.created="${BUILD_DATE}"
 ```
 
-Standard `org.opencontainers.image.*` labels, populated at build time via `--build-arg` (wired through `docker-compose.yml`'s `build.args`, see below). Registry tooling and vulnerability scanners (e.g. Trivy, planned for Phase 3) read these labels for provenance — a static, hand-written label would defeat the purpose.
+Standard `org.opencontainers.image.*` labels, populated at build time via `--build-arg` (wired through `docker-compose.yml`'s `build.args`, see below). Registry tooling and vulnerability scanners (e.g. Trivy, used in CI) read these labels for provenance — a static, hand-written label would defeat the purpose.
 
 ---
 
@@ -138,7 +138,7 @@ docker compose build
 |---------|-------|--------|
 | `restart` | `unless-stopped` | Recovers from crashes without manual intervention, but respects an intentional `docker compose down` |
 | `stop_grace_period` | `40s` | `HealingActions._execute_command()` gives shell scripts up to 30s (see [docs/architecture.md](architecture.md#apphealing--remediation-layer)); the default 10s grace period could get a mid-healing cycle SIGKILLed before it finishes cleanly |
-| `logging.driver` | `json-file`, `max-size: 10m`, `max-file: 3` | Caps on-disk log growth — the same rotation concern `logger.py` already handles for `logs/phoenixauto_ops.log`, applied at the Docker layer for stdout |
+| `logging.driver` | `json-file`, `max-size: 10m`, `max-file: 3` | Caps on-disk log growth — the same rotation concern `logger.py` already handles for `logs/phoenixauto-ops.log`, applied at the Docker layer for stdout |
 
 ---
 
@@ -165,7 +165,8 @@ _HOST_PROC_PATH = os.environ.get("HOST_PROC_PATH")
 if _HOST_PROC_PATH:
     psutil.PROCFS_PATH = _HOST_PROC_PATH
 
-_DISK_CHECK_PATH = os.environ.get("HOST_ROOT_PATH", "/")
+_HOST_ROOT_PATH = os.environ.get("HOST_ROOT_PATH")
+_DISK_CHECK_PATH = _HOST_ROOT_PATH if _HOST_ROOT_PATH else "/"
 ```
 
 This is the same bind-mount pattern used by Prometheus `node_exporter` and cAdvisor — mount the host's `/proc` and `/` read-only, then point the metrics library at the mount instead of the container's own view. `/proc/stat`, `/proc/meminfo`, and `/proc/loadavg` are generated relative to whichever namespace originally mounted that procfs instance; since it's the host's real `/proc` bind-mounted in, reading it from inside the container returns the host's actual numbers. This works without `--pid=host` or `network_mode: host`, so the container keeps its own process and network isolation.
@@ -174,7 +175,7 @@ This is the same bind-mount pattern used by Prometheus `node_exporter` and cAdvi
 |--------|--------|--------------------|
 | CPU / memory | `/proc/stat`, `/proc/meminfo` via `PROCFS_PATH` | Yes |
 | Disk usage | `psutil.disk_usage(HOST_ROOT_PATH)` | Yes |
-| Load average | `os.getloadavg()` | No — load average is a global kernel statistic, not namespaced per container |
+| Load average | `psutil.getloadavg()` | No — load average is a global kernel statistic, not namespaced per container |
 
 ---
 
@@ -206,16 +207,27 @@ WARNING | Failed to get bytes received: [Errno 2] No such file or directory: '/h
 WARNING | Failed to get connections: [Errno 2] No such file or directory: '/host/proc/net/tcp'
 ```
 
-**Confirmed via live testing** (see project history): a full monitor → alert → heal cycle run under `docker compose up` on Docker Desktop/WSL2 showed `network_connections` permanently read as `0` (the `_safe_execute()` fallback), so a configured `network.max_connections` breach that fired correctly on native WSL (outside Docker) never triggered on the same thresholds inside the container - exactly as this limitation predicts. CPU, memory, disk, and load-average based alerting and healing (`clear_cache`) were unaffected and verified working inside the container.
+**Confirmed via live testing** (see project history): a full monitor → alert → heal cycle run under `docker compose up` on Docker Desktop/WSL2 showed `network_connections` permanently read as `0` (the `_safe_execute()` fallback), so a configured `network.max_connections` breach that fired correctly on native WSL (outside Docker) never triggered on the same thresholds inside the container - exactly as this limitation predicts. CPU and load-average alerting and CPU-culprit detection were unaffected and verified inside the container (memory and disk alerting use the same code path but were not triggered in that test).
 
 **Root cause:** Docker Desktop's WSL2 backend runs the Docker daemon inside a separate, hidden lightweight VM (`docker-desktop` distro), not the user's own WSL distro. The `/proc:/host/proc:ro` bind mount attaches to that VM's `/proc`. Static, snapshot-style files (`/proc/stat`, `/proc/meminfo`) relay through Docker Desktop's file-sharing layer correctly, but dynamically-generated `seq_file` entries like `/proc/net/dev` and `/proc/net/tcp` require direct kernel procfs access that the virtio-fs/gRPC-FUSE sharing layer does not forward.
 
 **What still works correctly despite this:**
 - CPU, memory, disk, and load average metrics — confirmed accurate against host `htop`/`free -h` during testing
 - `_safe_execute()` (see [docs/architecture.md](architecture.md#appmonitoring--metrics-layer)) catches the exception per-metric, logs a `WARNING`, and returns a `0` default — the monitoring cycle completes successfully rather than crashing
-- Graceful shutdown, healing, and alerting are entirely unaffected
+- Graceful shutdown and alerting are unaffected; healing is limited inside a container (see *Healing inside the container*)
 
 **Not planned as a container-level fix.** This is a Docker Desktop / WSL2 platform constraint, not a bug in `NetworkMetrics` or the mount configuration — the identical `docker-compose.yml` is expected to report network metrics correctly on a native Linux host (the Phase 4 AWS EC2 target). Re-verification on a native Linux Docker host is a follow-up item once Phase 4 begins.
+
+---
+
+## Healing inside the container
+
+- `restart_service`: cannot succeed (no systemd, no `systemctl`). Verified: 3 failed attempts, then the 300 s cooldown.
+- `clear_cache`: `cleanup.sh` calls `sudo`, which is not in the image; each step is non-fatal, so the action is reported as succeeded without freeing anything.
+- `kill_process`: `pkill` only sees the container's own PID namespace and the target name is a placeholder, so nothing matches ("No matching process found", treated as success).
+- CPU-culprit detection works, because `psutil.process_iter()` reads the mounted host `/proc`.
+- Container logs use UTC timestamps; a native run uses local time.
+- Recommendation: run the container with `auto_healing.dry_run: true`; use a native deployment for real remediation.
 
 ---
 

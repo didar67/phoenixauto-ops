@@ -38,16 +38,16 @@ PhoenixAuto-Ops uses a two-layer configuration system: a YAML file for operation
 
 | Key | Default | Type | Description |
 |-----|---------|------|-------------|
-| `thresholds.cpu_usage_percent` | `85.0` | float | Aggregate CPU utilization % above which an alert is dispatched |
-| `thresholds.memory_usage_percent` | `90.0` | float | RAM usage % (used / total) that triggers an alert |
-| `thresholds.disk_usage_percent` | `80.0` | float | Usage % on any single mount point that triggers an alert |
+| `thresholds.cpu_usage_percent` | `80.0` | float | Aggregate CPU utilization % above which an alert is dispatched |
+| `thresholds.memory_usage_percent` | `85.0` | float | RAM usage % (psutil, based on available memory) that triggers an alert |
+| `thresholds.disk_usage_percent` | `90.0` | float | Usage % of the root filesystem (`/`; `HOST_ROOT_PATH` in Docker) that triggers an alert (alert only, no healing) |
 | `thresholds.load_average_limit` | `4.0` | float | 1-minute load average above which an alert fires |
-| `thresholds.network.max_connections` | `500` | int | Total active TCP connections above which an alert is dispatched |
-| `thresholds.network.latency_ms` | `200` | int | Round-trip latency threshold in milliseconds that triggers an alert |
+| `network.max_connections` | `500` | int | Active TCP connections above which an alert and healing fire |
+| `network.latency_ms` | `200` | int | Reserved - not implemented yet; no code reads this value |
 | `auto_healing.enabled` | `true` | bool | Master switch — `false` disables the entire healing layer |
-| `auto_healing.dry_run` | `false` | bool | When `true`, logs intended actions without executing shell scripts |
+| `auto_healing.dry_run` | `false` | bool | When `true`, logs intended actions without executing shell scripts (shipped YAML: `false`; if the key is missing the code falls back to `true`) |
 | `auto_healing.max_retry_attempts` | `3` | int | How many times a failed healing action is retried before giving up |
-| `auto_healing.cooldown_seconds` | `300` | int | Minimum seconds between repeated healing for the same trigger type |
+| `auto_healing.cooldown_seconds` | `300` | int | Minimum seconds between repeated healing for the same action type (restart_service / clear_cache / kill_process), also after a failed attempt |
 | `auto_healing.consecutive_breaches_required` | `3` | int | Number of consecutive monitoring cycles a metric must stay in breach before an alert or healing action fires - prevents a single transient spike from triggering a restart |
 | `alerting.cooldown_minutes` | `15` | int | Minimum minutes between repeated alerts for the same metric. Not currently present in `thresholds.yaml` by default — falls back to this code default (`BaseAlertSender.__init__`); add an `alerting:` section to `thresholds.yaml` to override |
 
@@ -55,7 +55,7 @@ PhoenixAuto-Ops uses a two-layer configuration system: a YAML file for operation
 
 **CPU (`cpu_usage_percent`):** On application servers under normal load, CPU typically stays below 60–70%. Set the threshold to leave a 15–20% buffer before the server becomes genuinely unresponsive. For batch-job servers that legitimately spike, consider `92.0`.
 
-**Memory (`memory_usage_percent`):** Linux uses free RAM for cache, so `used/total` alone can look high. Values above 90% usually indicate real memory pressure.
+**Memory (`memory_usage_percent`):** psutil computes the percentage from *available* memory (reclaimable cache is not counted as used), so sustained values above ~90% usually indicate real memory pressure.
 
 **Disk (`disk_usage_percent`):** `80.0` leaves approximately 20% headroom, which is the widely used operations standard. Set lower (`70.0`) on small-volume servers where 10GB free makes a meaningful difference.
 
@@ -127,7 +127,7 @@ Full explanation of why these are needed and how the mounts work → **[docs/doc
 
 ## How `config_loader.py` Merges Both Layers
 
-`load_config()` in `app/utils/config_loader.py` constructs the unified config dict that every component receives at instantiation:
+The `ConfigLoader` singleton (`config`, created at import time in `app/utils/config_loader.py`) is shared by every component and works as follows:
 
 The loader:
 
@@ -140,7 +140,7 @@ The loader:
   would always return `None` regardless of what's in `.env`
 - Returns a unified configuration dictionary from `get_all()`
 
-Components access credentials via `config.get('telegram.bot_token')` — no direct `os.environ` calls outside `config_loader.py`. This keeps secret access centralized and makes unit testing straightforward (pass a mock config dict).
+Components access credentials via `config.get('telegram.bot_token')` — secrets are never read from `os.environ` outside `config_loader.py` (only `LOG_LEVEL` and the Docker `HOST_*_PATH` variables are read elsewhere). This keeps secret access centralized and makes unit testing straightforward (monkeypatch `get()` via the `patch_config` fixture).
 
 **Testing note:** because `_load_secrets_from_env()` reads `os.environ` directly, and the `config` singleton loads the real `.env` once at import time, any test asserting an "empty config" against an isolated `tmp_path` must clear the relevant env vars first (`monkeypatch.delenv(...)`) — otherwise leftover real credentials from the actual `.env` leak into the assertion.
 
@@ -233,8 +233,8 @@ git commit -m "Remove accidentally tracked .env secrets file"
 
 - **Cooldown asymmetry:** As shipped, `alerting.cooldown_minutes` defaults to 15 minutes (900s, code fallback) while `auto_healing.cooldown_seconds` defaults to 5 minutes (300s, set in `thresholds.yaml`) — healing can currently retry up to 3x more often than a fresh alert fires for the same metric. If that's not the intended behavior for a given deployment, either raise `auto_healing.cooldown_seconds` to 900+ or explicitly set a shorter `alerting.cooldown_minutes` in `thresholds.yaml` so the two stay aligned.
 
-- **Validate dry-run first:** Every time `thresholds.yaml` is changed on a production server, temporarily set `dry_run: true`, run one cycle, inspect `logs/phoenixauto_ops.log` to confirm which actions would have fired, then restore `dry_run: false`.
+- **Validate dry-run first:** Every time `thresholds.yaml` is changed on a production server, temporarily set `dry_run: true`, restart the engine (config is read once at startup), let a breach run, inspect `logs/phoenixauto-ops.log` to confirm which actions would have fired, then restore `dry_run: false`.
 
-- **Mount-specific disk thresholds:** The current `disk_usage_percent` threshold applies to all mount points. If `/data` is a high-churn volume and `/` is stable, adjust the threshold upward and add a note in the YAML explaining why.
+- **Disk scope:** Only the root filesystem (`/`) is monitored today; other mounts such as `/data` are not checked (possible future extension).
 
 - **App password over account password:** For Gmail SMTP, an App Password is scoped to a single app and can be individually revoked without changing your account password. Never use your Google account password as `SMTP_PASSWORD`.

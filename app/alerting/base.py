@@ -57,7 +57,7 @@ class BaseAlertSender(ABC):
             if was_sent is False:
                 return False
             self.last_sent[metric] = datetime.now()
-            self.logger.info(f"Alert sent for {metric}: {message}", level=level)
+            self.logger.info(f"Alert sent for {metric}: {message}", alert_level=level)
             return True
         except Exception as e:
             self.logger.error(f"Failed to send alert for {metric}: {e}")

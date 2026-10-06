@@ -26,6 +26,11 @@ from pathlib import Path
 from typing import Any
 
 
+# Attributes every LogRecord carries by default - anything beyond these came from
+# logger.info("msg", key=value) and belongs in the JSON output.
+_STANDARD_ATTRS = set(logging.makeLogRecord({}).__dict__) | {"message", "asctime"}
+
+
 class JSONFormatter(logging.Formatter):
     """Custom JSON formatter for structured logging in files."""
 
@@ -47,6 +52,12 @@ class JSONFormatter(logging.Formatter):
                 log_entry.update(extra_data)
             except Exception:
                 log_entry["extra_error"] = "Failed to serialize extra data"
+
+        # Keyword arguments (logger.info("...", cpu=45.2)) become attributes on the
+        # record itself, so copy them in without overwriting the core keys.
+        for key, value in record.__dict__.items():
+            if key not in _STANDARD_ATTRS and key != "extra" and key not in log_entry:
+                log_entry[key] = value
 
         # Safely add exception info
         if record.exc_info:

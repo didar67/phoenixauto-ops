@@ -78,7 +78,7 @@ Building one component per branch rather than committing everything to `main` di
 | `feat/alerting-email` | `EmailAlertSender` in `app/alerting/email.py`; SMTP/TLS via `smtplib` with multi-recipient support |
 | `feat/healing-base` | `BaseHealer` in `app/healing/base.py` with dry-run flag, retry loop, per-action cooldown, and `auto_healing` config integration |
 | `feat/healing-actions` | `HealingActions` in `app/healing/actions.py`; initial breach-type to action mapping |
-| `feat/linux-automation-scripts` | `scripts/service_manager.sh` (systemctl wrapper); `scripts/cleanup.sh` (disk/cache cleanup with dry-run flag) |
+| `feat/linux-automation-scripts` | `scripts/service_manager.sh` (systemctl wrapper); `scripts/cleanup.sh` (APT/page-cache/old-log//tmp cleanup; dry-run is handled by the Python layer) |
 | `feat/healing-shell-integration` | `app/healing/actions.py` updated to run shell scripts with `subprocess.run()` and timeout handling |
 | `feat/cron-scheduler` | `scripts/run_monitor.sh` (venv-aware, cron-safe wrapper that activates venv); `cron/setup_cron.sh` (idempotent crontab installer) |
 | `feat/core-engine` | `app/engine.py` (`MonitoringEngine` — full monitor → evaluate → alert → heal cycle); `app/main.py` (entry point); manual end-to-end testing via one-shot runs and log inspection |
@@ -116,7 +116,7 @@ git checkout -b feat/new-alert-channel
 
 ### 2. Build and Test Locally
 
-Run the feature locally and verify behavior with a one-shot execution and log inspection.
+Run the engine locally in the foreground and verify behavior with log inspection.
 
 ### 3. Commit with a Meaningful Message
 
@@ -133,7 +133,7 @@ git commit -m "update alerting"
 For a multi-step feature, commit each logical step separately:
 
 ```bash
-git commit -m "Add BaseAlertSender._dispatch() contract for PagerDuty"
+git commit -m "Add PagerDutySender skeleton extending BaseAlertSender"
 git commit -m "Implement PagerDuty Events API v2 POST in PagerDutySender"
 git commit -m "Register PagerDutySender in engine.py alert dispatch list"
 ```
@@ -173,16 +173,16 @@ git checkout -b feat/alerting-pagerduty
 # 1. Create the file
 touch app/alerting/pagerduty.py
 
-# 2. Extend BaseAlertSender, implement _dispatch()
+# 2. Extend BaseAlertSender, implement _send()
 # class PagerDutySender(BaseAlertSender):
-#     def _dispatch(self, payload: dict) -> None:
+#     def _send(self, message: str) -> bool:
 #         # POST to PagerDuty Events API v2
 
 # 3. Add credentials to .env.example and .env
 # PAGERDUTY_ROUTING_KEY=your_32_char_integration_key
 
 # 4. Register in engine.py alert dispatch list
-# alert_senders.append(PagerDutySender(config))
+# self.pagerduty_alert = PagerDutySender()  # then call .send_alert(...) inside _send_alert()
 ```
 
 ### New Healing Action (e.g., Redis restart)
@@ -222,14 +222,15 @@ def send(self, message: str, metric_key: str) -> bool:
 **Docstrings on every public class and function:**
 
 ```python
-def load_config(yaml_path: str = "config/thresholds.yaml") -> dict:
-    """Load operational config from YAML and merge secrets from .env.
+def get_threshold(self, metric_key: str, default: float = 80.0) -> float:
+    """Get a threshold value by its metric key.
 
     Args:
-        yaml_path: Path to thresholds.yaml, relative to project root.
+        metric_key: e.g. cpu_usage_percent.
+        default: Fallback if the key is missing.
 
     Returns:
-        Merged config dict with 'thresholds', 'auto_healing', and 'secrets' keys.
+        The threshold as a float.
     """
 ```
 

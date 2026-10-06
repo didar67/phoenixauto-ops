@@ -10,7 +10,7 @@ This document covers the internal design of PhoenixAuto-Ops: component responsib
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                        PhoenixAuto-Ops Runtime                           │
 │                                                                          │
-│   cron / run_monitor.sh                                                  │
+│   systemd / Docker / sh                                                  │
 │           │                                                              │
 │           ▼                                                              │
 │     app/main.py  ───────────────────────────────────────────────────┐   │
@@ -75,7 +75,7 @@ This document covers the internal design of PhoenixAuto-Ops: component responsib
 | `SlackAlertSender` | `slack.py` | Incoming Webhook |
 | `EmailAlertSender` | `email.py` | SMTP/TLS email delivery |
 
-`BaseAlertSender` keeps a cooldown timestamp per metric key to prevent repeated alerts for the same metric within the cooldown window. Channel-specific classes only implement `_dispatch(payload)`.
+`BaseAlertSender` keeps a cooldown timestamp per metric key to prevent repeated alerts for the same metric within the cooldown window. Channel-specific classes only implement `_send(message) -> bool`.
 Each channel's `_send()` returns `True` on an actual dispatch attempt and `False` when the channel is unconfigured and the send was intentionally skipped (missing credentials) - `send_alert()` only logs "Alert sent" and starts the cooldown timer on `True`, so a skipped channel is never misreported as delivered.
 
 ### `app/healing/` — Remediation Layer
@@ -102,8 +102,8 @@ Implemented actions include service restart, cache cleanup, and log rotation. `k
 
 ```
 Step 1 — COLLECT
-  cron triggers scripts/run_monitor.sh
-    └── calls python3 -m app.main
+  engine starts (python3 -m app.main - Docker, systemd or foreground)
+    └── run_forever() repeats the cycle every cycle_interval_seconds (default 60s)
           └── MonitoringEngine instantiated with merged config
           └── SystemMetrics.collect()  → metric_snapshot dict
           └── NetworkMetrics.collect() → appended to snapshot
@@ -117,15 +117,15 @@ Step 2 — EVALUATE (streak-gated)
   spiky cycle logs "streak 1/3" and takes no further action
 
 Step 3 — ALERT (cooldown-aware, sustained breaches only)
-  for each metric that just reached its required streak this cycle:
+  for each metric whose streak is at or above the required length (every cycle while the breach persists):
     └── TelegramAlertSender.send_alert(...) → checks cooldown → dispatches
     └── SlackAlertSender.send_alert(...)    → checks cooldown → dispatches
     └── EmailAlertSender.send_alert(...)    → checks cooldown → dispatches
-  cooldown prevents re-alerting the same metric within cooldown_seconds,
+  cooldown (alerting.cooldown_minutes, default 15 min) prevents re-alerting the same metric,
   independent of the streak counter
 
 Step 4 — HEAL (per-metric isolated, dry-run / retry-aware)
-  if auto_healing.enabled, for each metric that just reached sustained breach:
+  if auto_healing.enabled, for each metric in sustained breach:
     └── cpu_usage_percent  → identify real top-CPU process → restart_service(target)
     └── memory_usage_percent → clear_cache()
     └── network_connections  → kill_process("high-connection-process")
@@ -138,8 +138,8 @@ Step 4 — HEAL (per-metric isolated, dry-run / retry-aware)
                 └── exhausted → log error for that action only, continue
 
 Step 5 — LOG
-  all steps emit structured JSON to logs/phoenixauto_ops.log
-  engine exits cleanly after each cycle.
+  all steps emit structured JSON to logs/phoenixauto-ops.log
+  the loop then sleeps cycle_interval_seconds and repeats until SIGTERM/SIGINT.
 ```
 
 ---
@@ -171,11 +171,11 @@ PhoenixAuto-Ops is designed around modularity, separation of concerns, and confi
 - **Healing restart target is CPU-only dynamic**: `get_top_cpu_process()`
   identifies the real highest-CPU process to restart, but memory and
   network healing (`clear_cache`, `kill_process`) still act on fixed
-  targets rather than diagnosing the specific cause.
+  targets rather than diagnosing the specific cause (`kill_process` uses the placeholder name `high-connection-process`, which matches nothing on a typical host). The dynamic restart target is a *process* name; it only works when it equals a systemd unit name.
 - **Docker: `restart_service()` cannot succeed inside a container** - no
   systemd/PID 1 init and no `sudo` binary by design (see
   [docs/docker.md](docker.md#known-limitation)). Monitoring and alerting
-  work correctly in Docker; `clear_cache`/`kill_process` also work since
+  work correctly in Docker; `clear_cache`/`kill_process` are effectively no-ops in a container (no sudo, separate PID namespace - see docs/docker.md), although
   they don't depend on systemd.
 
 ---
@@ -199,23 +199,23 @@ This makes unit testing straightforward without needing real config files on dis
 New functionality can be added without changing the core orchestration logic.
 
 - Add a new monitor by extending BaseMetricCollector and registering it in engine.py.
-- Add a new alert channel by extending BaseAlertSender and implementing _dispatch().
+- Add a new alert channel by extending BaseAlertSender and implementing _send().
 - Add a new healing action by adding a shell script and mapping it inside HealingActions.
 
 ---
 
 ## Containerized Runtime
 
-PhoenixAuto-Ops runs identically whether invoked by `cron` on bare metal or as a long-running process inside Docker — the `monitoring/ → alerting/ → healing/` cycle described above does not change. Containerization changes *how* the engine is invoked and *where* its metric sources point, not the engine itself.
+PhoenixAuto-Ops runs identically on bare metal and inside Docker — the `monitoring/ → alerting/ → healing/` cycle described above does not change. Containerization changes *how* the engine is invoked and *where* its metric sources point, not the engine itself.
 
 ```text
 ┌───────────────────────────────┐         ┌───────────────────────────────┐
 │      Bare-Metal Path          │         │        Containerized Path     │
 │                                │         │                                │
-│  cron (*/5 * * * *)           │         │  docker-compose up             │
+│  systemd / foreground         │         │  docker-compose up             │
 │    └── run_monitor.sh          │         │    └── ENTRYPOINT python       │
 │          └── python3 -m app.main         │          └── -m app.main       │
-│                └── one cycle, exit        │                └── run_forever()│
+│                └── run_forever()          │                └── run_forever()│
 │                                │         │                    (continuous) │
 └───────────────────────────────┘         └───────────────────────────────┘
               │                                          │
@@ -227,7 +227,7 @@ PhoenixAuto-Ops runs identically whether invoked by `cron` on bare metal or as a
 
 Two things differ at the edges of this same cycle when running in a container:
 
-**Invocation model.** `cron/setup_cron.sh` re-invokes `app/main.py` every 5 minutes for a single cycle, then exits. The container instead runs `MonitoringEngine.run_forever()` continuously — `cron` has no role inside a container, since the engine already loops on its own via `cycle_interval_seconds`.
+**Invocation model.** On bare metal and in Docker the engine is one long-running process (`MonitoringEngine.run_forever()`), looping every `cycle_interval_seconds`. On bare metal start it with systemd or in the foreground; in Docker, Compose (`restart: unless-stopped`) supervises it. Cron is used only for `scripts/watchdog.sh`.
 
 **Metric source.** By default, `SystemMetrics` and `NetworkMetrics` (see [`app/monitoring/`](#appmonitoring--metrics-layer) above) read `/proc` for whichever namespace they're running in. On bare metal that's already the host. Inside a container, `psutil.PROCFS_PATH` is redirected to a bind-mounted copy of the host's `/proc` (`HOST_PROC_PATH`/`HOST_ROOT_PATH`), so the same `SystemMetrics.collect()` contract keeps returning host-level numbers rather than container-namespace numbers. `BaseMetricCollector`'s interface is untouched — only the underlying file path `psutil` reads from changes.
 

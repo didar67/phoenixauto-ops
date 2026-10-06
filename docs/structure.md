@@ -41,12 +41,12 @@ phoenixauto-ops/
 ├── scripts/                        # Production Bash scripts for system-level operations
 │   ├── service_manager.sh          # systemctl wrapper with input validation and logging
 │   ├── cleanup.sh                  # Disk/cache cleanup and temporary file maintenance
-│   ├── run_monitor.sh              # Cron-safe runner: activates venv and runs `python3 -m app.main`
+│   ├── run_monitor.sh              # Foreground launcher: activates venv and runs `python3 -m app.main`
 │   ├── watchdog.sh                 # Independent log-freshness check; alerts via Slack if the engine itself has stopped
 │   └── .gitkeep
 │
 ├── cron/                           # Scheduling setup
-│   ├── setup_cron.sh               # Idempotent crontab installer
+│   ├── setup_cron.sh               # Idempotent installer for the watchdog cron entry
 │   └── .gitkeep
 │
 ├── config/
@@ -97,7 +97,7 @@ Entry point invoked by `scripts/run_monitor.sh` and direct `python3 -m app.main`
 
 - Loading the merged config via `config_loader`
 - Instantiating `MonitoringEngine`
-- Handling top-level exceptions so the process exits with a meaningful code (used by the cron wrapper to detect failures)
+- Registering the SIGTERM handler for graceful shutdown and logging a CRITICAL entry before re-raising any fatal error
 
 Does not contain business logic — that all lives in `engine.py`.
 
@@ -107,10 +107,10 @@ The brain of PhoenixAuto-Ops. `MonitoringEngine` drives a single execution cycle
 
 1. Collect metric snapshot from all enabled monitors
 2. Track each metric's consecutive-breach streak against its configured threshold - a single transient spike doesn't act; only a breach sustained for `auto_healing.consecutive_breaches_required` consecutive cycles does
-3. Dispatch alerts through all three channels (Telegram, Slack, Email) for metrics that just reached sustained breach
+3. Dispatch alerts through all three channels (Telegram, Slack, Email) for metrics currently in sustained breach
 4. Trigger healing for those same metrics - CPU healing identifies the actual top-CPU process (`SystemMetrics.get_top_cpu_process()`) rather than assuming a fixed service name; each metric's healing action runs in its own isolated try/except so one failing action doesn't block the others
 
-Keeps the orchestration logic thin and delegates all implementation details to the respective layers. Each layer is instantiated fresh per run — no stale state carries between cron invocations.
+Keeps the orchestration logic thin and delegates all implementation details to the respective layers. The engine is a long-running process: breach streaks and cooldown timestamps live in memory and reset when it restarts.
 
 ### `app/monitoring/base.py`
 
@@ -125,7 +125,7 @@ Any class that inherits `BaseMetricCollector` must implement `collect()`. This m
 
 ### `app/monitoring/system.py`
 
-`SystemMetrics` implements CPU utilization, memory pressure, per-mount disk usage, and system load average using `psutil`. All readings are collected in a single pass to minimize time skew between related values.
+`SystemMetrics` implements CPU utilization, memory pressure, root-filesystem (`/`) disk usage, and system load average using `psutil`. All readings are collected in a single pass to minimize time skew between related values.
 
 ### `app/monitoring/network.py`
 
@@ -138,14 +138,14 @@ Any class that inherits `BaseMetricCollector` must implement `collect()`. This m
 - Message formatting (`format_message()` produces a consistent alert body)
 - Logging of sent/skipped decisions at appropriate levels
 
-Subclasses implement only `_dispatch(payload)` — the channel-specific HTTP or SMTP call.
+Subclasses implement only `_send(message) -> bool` — the channel-specific HTTP or SMTP call (`False` = channel unconfigured, skipped).
 
 ### `app/alerting/telegram.py`, `slack.py`, `email.py`
 
-Each file contains exactly one class that extends `BaseAlertSender` and implements `_dispatch()` for its channel:
+Each file contains exactly one class that extends `BaseAlertSender` and implements `_send()` for its channel:
 - `TelegramAlertSender` — POST to `https://api.telegram.org/bot{token}/sendMessage`
 - `SlackAlertSender` — POST JSON payload to Incoming Webhook URL
-- `EmailAlertSender` — SMTP connection with STARTTLS, authenticated send via `smtplib`
+- `EmailAlertSender` — SMTP over implicit TLS (`smtplib.SMTP_SSL`, port 465), authenticated send
 
 Credentials are read from the config dict (sourced from `.env`), never hardcoded.
 
@@ -163,11 +163,11 @@ Credentials are read from the config dict (sourced from `.env`), never hardcoded
 
 ### `app/utils/config_loader.py`
 
-`load_config(yaml_path)` function:
+`ConfigLoader` class (module-level singleton `config`):
 1. Reads and parses `config/thresholds.yaml` with `pyyaml`
 2. Calls `python-dotenv`'s `load_dotenv()` to populate `os.environ` from `.env`
-3. Merges environment variables into the config dict under a `secrets` key
-4. Returns the unified dict — callers never need to touch `os.environ` directly
+3. Bridges telegram/slack/email credentials from `os.environ` into the same config tree (`telegram.*`, `slack.*`, `email.*`)
+4. Exposes `get()` (dot notation), `get_threshold()` and `get_all()`
 
 Also bridges `telegram.*`/`slack.*`/`email.*` credentials from `os.environ` (populated by `.env`) into the same config tree `get()` reads from - see [docs/configuration.md](configuration.md) for why this bridge exists.
 
@@ -178,31 +178,31 @@ Also bridges `telegram.*`/`slack.*`/`email.*` credentials from `os.environ` (pop
 - A `TimedRotatingFileHandler` writing daily-rotated JSON to `logs/phoenixauto-ops.log` (7 backups)
 - Log level read from the `LOG_LEVEL` environment variable (defaults to `INFO`)
 
-The JSON formatter adds `timestamp`, `level`, `component`, and `message` keys to every record. Any `extra={}` dict passed to a log call is merged into the JSON object, enabling structured context like `{"metric": "cpu_percent", "value": 91.3}`.
+The JSON formatter writes `timestamp`, `level`, `message`, `module`, `function` and `line` for every record, plus any keyword arguments passed to the logger (e.g. `logger.info("...", cpu=45.2)`).
 
 ### `scripts/service_manager.sh`
 
 A `systemctl` wrapper that:
 - Validates the target service name before calling `systemctl`
-- Captures stdout/stderr and exits with the original exit code
+- Logs to `logs/service_manager.log`; exits 0 on success and 1 on any failure
 - Supports `restart`, `stop`, `start`, `status` subcommands
-- Has a `--dry-run` flag that mirrors the Python-layer dry-run for shell-level testing
+- Has no dry-run flag; dry-run is handled in the Python layer (`auto_healing.dry_run`)
 
 Called by `HealingActions` for service restart remediation.
 
 ### `scripts/cleanup.sh`
 
 Handles disk-level cleanup:
-- Removes files in `/tmp` older than N days, truncates oversized log files
-- Calls `/proc/sys/vm/drop_caches` (requires sudo)
-- Prints what would be deleted/flushed without making changes
-- Reports total bytes freed in its stdout, captured by the calling Python layer
+- Runs `apt-get clean` (Debian/Ubuntu) and deletes `/tmp` files not accessed for more than a day
+- Drops the page cache via `/proc/sys/vm/drop_caches` (requires sudo)
+- Deletes `*.log` files older than 7 days in `./logs`
+- Each step is non-fatal (`|| true` / warning), so the script exits 0 even where `sudo` is unavailable (e.g. inside Docker)
 
 ### `scripts/run_monitor.sh`
 
-Production-safe cron entry point:
+Foreground launcher (activates the venv, then runs the engine until stopped):
 1. Activates `venv/` relative to the script's directory
-2. Sources `.env` for any shell-level variable needs
+2. Logs to `logs/run_monitor.log`
 3. Executes the application as a Python module using `python3 -m app.main` to properly resolve relative imports
 
 ### `scripts/watchdog.sh`
@@ -215,7 +215,7 @@ GitHub Actions pipelines validating every change before merge — lint/format, t
 
 ### `cron/setup_cron.sh`
 
-Reads the current user's crontab, checks whether a PhoenixAuto-Ops entry already exists (grep on a comment marker), and adds the job only if absent. This makes it safe to re-run after updates without creating duplicate entries. Default schedule is `*/5 * * * *` — configurable by editing the script variable `CRON_SCHEDULE` before running.
+Reads the current user's crontab, checks whether a PhoenixAuto-Ops entry already exists (grep on a comment marker), and adds the `scripts/watchdog.sh` job (every 5 minutes) only if absent. This makes it safe to re-run after updates without creating duplicate entries. Default schedule is `*/5 * * * *` — configurable by editing the script variable `CRON_SCHEDULE` before running.
 
 ### `config/thresholds.yaml`
 
@@ -227,7 +227,7 @@ pytest suite split into `unit/` and `integration/`. Unit tests mock every extern
 
 `integration/test_engine_cycle.py` verifies `MonitoringEngine.run_cycle()` wiring — collect → evaluate → alert → heal — with each collaborator mocked, since their individual behavior is already covered by their own unit test modules.
 
-Current state: 48 tests, 80% coverage (`pytest.ini` configured with `--cov-report=xml` for future Codecov integration).
+Current state: 53 tests, ~77% coverage (`pytest.ini` configured with `--cov-report=xml` for future Codecov integration).
 
 ### `pytest.ini`
 

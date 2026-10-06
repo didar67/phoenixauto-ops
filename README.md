@@ -13,7 +13,7 @@
 
 ## 📌 What Is This?
 
-PhoenixAuto-Ops continuously monitors server vitals — CPU, memory, disk, load average, and network I/O — and reacts to threshold violations through a multi-channel alert pipeline (Telegram, Slack, Email) and an automated healing engine that can restart services, flush caches, and execute custom remediation scripts.
+PhoenixAuto-Ops continuously monitors server vitals — CPU, memory, disk, load average, and network I/O — and reacts to threshold violations through a multi-channel alert pipeline (Telegram, Slack, Email) and an automated healing engine that can restart services, flush caches, and run shell-based remediation scripts.
 
 Designed as a portfolio-grade DevOps project demonstrating: modular Python architecture, production Bash scripting, systemd/cron integration, and disciplined configuration management.
 
@@ -29,7 +29,7 @@ Designed as a portfolio-grade DevOps project demonstrating: modular Python archi
 - 🔐 **Automated CI security gates** — GitHub Actions runs lint, tests, Bandit static analysis, and pip-audit dependency scanning on every pull request, plus Dockerfile linting (hadolint) and Trivy image scanning whenever Docker-relevant files change
 - ⚙️ **Config-driven** — all thresholds and healing flags live in `config/thresholds.yaml`
 - 🔒 **Secrets management** — credentials in `.env`, never committed to version control
-- ⏰ **Autonomous scheduling** — cron-based execution via idempotent `cron/setup_cron.sh`
+- ⏰ **Long-running engine + watchdog** — the engine loops continuously (Docker, systemd or foreground); cron only runs the independent watchdog via `cron/setup_cron.sh`
 - 🐳 **Containerized** — multi-stage Docker build, non-root runtime, host-level system monitoring via read-only `/proc` and host filesystem mounts
 - 🎯 **Sustained-breach gating** — alerts and healing only fire after a metric breaches its threshold for several consecutive cycles, avoiding false triggers on transient spikes
 - 🔍 **Dynamic CPU-culprit targeting** — identifies the actual highest-CPU process at breach time instead of restarting a fixed service name
@@ -66,7 +66,7 @@ phoenixauto-ops/
 │   └── main.py             # Entry point
 ├── scripts/                # Bash: service_manager.sh, cleanup.sh, run_monitor.sh, watchdog.sh
 ├── tests/                  # pytest suite (unit + integration), see docs/structure.md
-├── cron/                   # setup_cron.sh — idempotent crontab installer
+├── cron/                   # setup_cron.sh — installs the watchdog cron entry
 ├── config/                 # Metric thresholds + healing config
 ├── logs/                   # Runtime JSON logs (git-ignored)
 ├── venv/                   # Python virtual environment (Generated locally, git-ignored)
@@ -97,7 +97,7 @@ source venv/bin/activate
 cp .env.example .env
 nano .env   # Add TELEGRAM_BOT_TOKEN, SLACK_WEBHOOK_URL, or SMTP credentials
 
-# Run a one-shot monitoring cycle
+# Start the engine (runs continuously; Ctrl+C to stop)
 python3 -m app.main
 ```
 
@@ -151,7 +151,7 @@ Full configuration reference → **[docs/configuration.md](docs/configuration.md
 ## 🧪 Verify It's Working
 
 ```bash
-# One-shot run — see metrics, alerts, healing output
+# Run the engine in the foreground (Ctrl+C to stop) — see cycles, alerts, healing
 python3 -m app.main
 
 # Watch structured JSON logs in real time
@@ -169,6 +169,17 @@ pytest --cov=app --cov-report=term-missing
 
 ---
 
+## ⚠️ Known Limitations
+
+- Single node; breach streaks and cooldowns live in memory and reset when the engine restarts.
+- CPU healing tries to restart a systemd unit named after the top-CPU *process*; it only works when the two names match, and never inside a container (no systemd).
+- Memory healing (`cleanup.sh`: APT clean, page-cache drop, old `/tmp` files) is a coarse remediation and is effectively a no-op inside Docker (no `sudo`).
+- Network healing targets the placeholder name `high-connection-process`; with no match, `pkill` exits 1 and the action is logged as succeeded.
+- Disk and load breaches alert only, and only `/` is checked. `network.latency_ms` is reserved and not implemented.
+- Docker Desktop (WSL2): `/proc/net/*` is unavailable, so network metrics read 0 there; expected to work on native Linux (to be verified on AWS EC2).
+
+---
+
 ## 🗺️ Roadmap
 
 | Phase | Status | Scope |
@@ -176,7 +187,7 @@ pytest --cov=app --cov-report=term-missing
 | **Phase 1** — Core System | ✅ Complete | Python monitoring + alerting + healing + cron |
 | **Phase 2** — Docker | ✅ Complete | Multi-stage build, non-root container, host-level monitoring, health checks, OCI metadata |
 | **Phase 2.5** — Reliability Hardening | ✅ Complete | Sustained-breach gating, dynamic CPU-culprit targeting, self-crash watchdog, config-secret bridging fix |
-| **Phase 3** — Testing + CI + Security | ✅ Complete | pytest suite (48 tests, 80% coverage), GitHub Actions lint/format/test, Bandit + pip-audit dependency scanning, Docker build/runtime validation, Trivy image scanning with CRITICAL severity gate |
+| **Phase 3** — Testing + CI + Security | ✅ Complete | pytest suite (53 tests, ~77% coverage), GitHub Actions lint/format/test, Bandit + pip-audit dependency scanning, Docker build/runtime validation, Trivy image scanning with CRITICAL severity gate |
 | **Phase 4** — CD + AWS | 🔜 Planned | GHCR image publishing, ECS Fargate, Secrets Manager, Terraform IaC |
 
 ---

@@ -8,7 +8,7 @@ set -euo pipefail
 
 # Get absolute path of the project root and wrapper
 PROJECT_DIR=$(cd "$(dirname "$0")/.." && pwd)
-WRAPPER_SCRIPT="$PROJECT_DIR/scripts/run_monitor.sh"
+WRAPPER_SCRIPT="$PROJECT_DIR/scripts/watchdog.sh"
 LOG_DIR="$PROJECT_DIR/logs"
 
 log() {
@@ -22,8 +22,8 @@ log "INFO" "Starting cron setup process"
 # Create logs directory if missing
 mkdir -p "$LOG_DIR"
 
-# Define Cron Job (Every 5 minutes is standard for monitoring)
-CRON_JOB="*/5 * * * * $WRAPPER_SCRIPT"
+# Watchdog cron job (every 5 minutes). The engine itself is long-running and must NOT be started from cron.
+CRON_JOB="*/5 * * * * $WRAPPER_SCRIPT >> $LOG_DIR/cron.log 2>&1"
 
 # Check if cronjob already exists
 if crontab -l 2>/dev/null | grep -Fq "$WRAPPER_SCRIPT"; then
