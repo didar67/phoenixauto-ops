@@ -12,7 +12,6 @@ PROJECT_ROOT=$(pwd)
 
 LOG_FILE="$PROJECT_ROOT/logs/run_monitor.log"
 VENV_PATH="$PROJECT_ROOT/venv"
-MAIN_SCRIPT="$PROJECT_ROOT/app/main.py"
 
 log() {
     local level="$1"
@@ -35,11 +34,11 @@ source "$VENV_PATH/bin/activate" || {
 
 log "INFO" "Running Python monitoring engine"
 
-# Execute main script (-u for unbuffered logs)
-if python3 -u "$MAIN_SCRIPT" >> "$LOG_FILE" 2>&1; then
-    log "SUCCESS" "Monitoring cycle completed successfully"
+# Run the engine as a module (-u for unbuffered logs); blocks until stopped
+if python3 -u -m app.main >> "$LOG_FILE" 2>&1; then
+    log "SUCCESS" "Engine stopped cleanly"
     exit 0
 else
-    log "ERROR" "Monitoring cycle failed"
+    log "ERROR" "Engine exited with an error"
     exit 1
 fi

@@ -77,7 +77,8 @@ class MonitoringEngine:
 
     def _update_breach_streaks(self, data: dict, metric_thresholds: dict) -> dict:
         """Update each metric's consecutive-breach counter and return the
-        ones that have just crossed the required streak length this cycle.
+        ones currently at or above the required streak length (true on every cycle
+        while the breach persists - cooldowns limit repeated alerts and healing).
 
         Returns: {metric_key: (value, threshold)} for metrics ready to act on.
         """
@@ -118,8 +119,8 @@ class MonitoringEngine:
         self.email_alert.send_alert(metric_key, value, threshold, "critical")
 
     def _trigger_healing(self, system_data: dict, network_data: dict, sustained: dict) -> None:
-        """Trigger healing only for metrics that just reached a sustained
-        breach this cycle. Each action is isolated in its own try/except -
+        """Trigger healing only for metrics currently in a sustained
+        breach (the per-action cooldown limits repeats). Each action is isolated in its own try/except -
         one action's failure (e.g. restart_service failing in an
         environment with no systemd) must not prevent the other sustained
         breaches in the same cycle from getting their own healing attempt.

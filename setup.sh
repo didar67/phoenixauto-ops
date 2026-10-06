@@ -57,7 +57,7 @@ log "INFO" "Making shell scripts executable..."
 chmod +x scripts/*.sh
 
 # 5. Setup cronjob
-log "INFO" "Setting up cronjob..."
+log "INFO" "Setting up watchdog cron job..."
 if [[ -f "cron/setup_cron.sh" ]]; then
     bash cron/setup_cron.sh
 else
@@ -66,6 +66,6 @@ fi
 
 log "SUCCESS" "PhoenixAuto-Ops setup completed successfully!"
 log "INFO" "To run manually: source venv/bin/activate && python3 -m app.main"
-log "INFO" "Cronjob is now active — monitoring will run automatically."
+log "INFO" "Watchdog cron is active. Start the engine with: python3 -m app.main (or the systemd unit in docs/setup.md)."
 
 exit 0

@@ -31,9 +31,10 @@ if [[ -z "$(find "$LOG_FILE" -mmin -"$STALE_MINUTES")" ]]; then
     # .env is loaded separately by ConfigLoader for the Python app; this
     # script reads the webhook directly since it runs standalone via cron,
     # outside the app's own process.
-    if [[ -f "$PROJECT_ROOT/.env" ]]; then
-        # shellcheck disable=SC1091
-        source "$PROJECT_ROOT/.env"
+    # Read only the webhook line - sourcing the whole .env breaks on values with
+    # spaces (e.g. a Gmail app password written as "abcd efgh ijkl mnop").
+    if [[ -z "${SLACK_WEBHOOK_URL:-}" && -f "$PROJECT_ROOT/.env" ]]; then
+        SLACK_WEBHOOK_URL=$(grep -E '^SLACK_WEBHOOK_URL=' "$PROJECT_ROOT/.env" | head -n1 | cut -d= -f2- || true)
     fi
 
     if [[ -n "${SLACK_WEBHOOK_URL:-}" ]]; then
